@@ -146,137 +146,137 @@ def register_routes(app, telegram_service, rsvps, guestbook, playlist, logs, act
     @app.route("/api/telegram/visitor_entry", methods=["POST"])
     def visitor_entry():
         pass
-        # try:
-        #     client_body = request.json or {}
+        try:
+            client_body = request.json or {}
             
-        #     # Extract IP
-        #     ip = ""
-        #     forwarded = request.headers.get("X-Forwarded-For")
-        #     if forwarded:
-        #         ip = forwarded.split(",")[0].strip()
-        #     else:
-        #         ip = request.remote_addr or "127.0.0.1"
+            # Extract IP
+            ip = ""
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                ip = forwarded.split(",")[0].strip()
+            else:
+                ip = request.remote_addr or "127.0.0.1"
                 
-        #     if ip.startswith("::ffff:"):
-        #         ip = ip[7:]
+            if ip.startswith("::ffff:"):
+                ip = ip[7:]
                 
-        #     resolved_loc = {
-        #         "city": "Unknown",
-        #         "region": "Unknown",
-        #         "country_name": "Unknown",
-        #         "country_code": "??",
-        #         "org": "Unknown"
-        #     }
+            resolved_loc = {
+                "city": "Unknown",
+                "region": "Unknown",
+                "country_name": "Unknown",
+                "country_code": "??",
+                "org": "Unknown"
+            }
             
-        #     is_local_ip = (
-        #         not ip or 
-        #         ip == "::1" or 
-        #         ip == "127.0.0.1" or 
-        #         ip.startswith("10.") or 
-        #         ip.startswith("192.168.") or 
-        #         ip.startswith("172.")
-        #     )
+            is_local_ip = (
+                not ip or 
+                ip == "::1" or 
+                ip == "127.0.0.1" or 
+                ip.startswith("10.") or 
+                ip.startswith("192.168.") or 
+                ip.startswith("172.")
+            )
             
-        #     if is_local_ip:
-        #         try:
-        #             res = requests.get("https://ipwho.is/", timeout=3)
-        #             if res.status_code == 200:
-        #                 data = res.json()
-        #                 if data and data.get("success") is not False:
-        #                     resolved_loc = {
-        #                         "city": data.get("city") or "Unknown",
-        #                         "region": data.get("region") or "Unknown",
-        #                         "country_name": f"{data.get('country') or 'Unknown'} (Server Host Node)",
-        #                         "country_code": data.get("country_code") or "??",
-        #                         "org": data.get("connection", {}).get("org") or data.get("connection", {}).get("isp") or "Unknown"
-        #                     }
-        #         except Exception:
-        #             resolved_loc = {
-        #                 "city": "Local Sandbox",
-        #                 "region": "Internal Platform",
-        #                 "country_name": "Localhost Developer Loopback",
-        #                 "country_code": "US",
-        #                 "org": "Gateway Dev Network"
-        #             }
-        #     else:
-        #         fetched = False
-        #         # 1. ipwho.is lookup
-        #         try:
-        #             res = requests.get(f"https://ipwho.is/{ip}", timeout=3)
-        #             if res.status_code == 200:
-        #                 data = res.json()
-        #                 if data and data.get("success") is not False:
-        #                     resolved_loc = {
-        #                         "city": data.get("city") or "Unknown",
-        #                         "region": data.get("region") or "Unknown",
-        #                         "country_name": data.get("country") or "Unknown",
-        #                         "country_code": data.get("country_code") or "??",
-        #                         "org": data.get("connection", {}).get("org") or data.get("connection", {}).get("isp") or "Unknown"
-        #                     }
-        #                     fetched = True
-        #         except Exception as e:
-        #             print(f"[Server Geolocation] ipwho.is server-side lookup failed: {e}", flush=True)
+            if is_local_ip:
+                try:
+                    res = requests.get("https://ipwho.is/", timeout=3)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if data and data.get("success") is not False:
+                            resolved_loc = {
+                                "city": data.get("city") or "Unknown",
+                                "region": data.get("region") or "Unknown",
+                                "country_name": f"{data.get('country') or 'Unknown'} (Server Host Node)",
+                                "country_code": data.get("country_code") or "??",
+                                "org": data.get("connection", {}).get("org") or data.get("connection", {}).get("isp") or "Unknown"
+                            }
+                except Exception:
+                    resolved_loc = {
+                        "city": "Local Sandbox",
+                        "region": "Internal Platform",
+                        "country_name": "Localhost Developer Loopback",
+                        "country_code": "US",
+                        "org": "Gateway Dev Network"
+                    }
+            else:
+                fetched = False
+                # 1. ipwho.is lookup
+                try:
+                    res = requests.get(f"https://ipwho.is/{ip}", timeout=3)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if data and data.get("success") is not False:
+                            resolved_loc = {
+                                "city": data.get("city") or "Unknown",
+                                "region": data.get("region") or "Unknown",
+                                "country_name": data.get("country") or "Unknown",
+                                "country_code": data.get("country_code") or "??",
+                                "org": data.get("connection", {}).get("org") or data.get("connection", {}).get("isp") or "Unknown"
+                            }
+                            fetched = True
+                except Exception as e:
+                    print(f"[Server Geolocation] ipwho.is server-side lookup failed: {e}", flush=True)
                     
-        #         # 2. fallback freeipapi.com
-        #         if not fetched:
-        #             try:
-        #                 res = requests.get(f"https://freeipapi.com/api/json/{ip}", timeout=3)
-        #                 if res.status_code == 200:
-        #                     data = res.json()
-        #                     resolved_loc = {
-        #                         "city": data.get("cityName") or "Unknown",
-        #                         "region": data.get("regionName") or "Unknown",
-        #                         "country_name": data.get("countryName") or "Unknown",
-        #                         "country_code": data.get("countryCode") or "??",
-        #                         "org": "Unknown"
-        #                     }
-        #                     fetched = True
-        #             except Exception as e:
-        #                 print(f"[Server Geolocation] freeipapi server-side lookup failed: {e}", flush=True)
+                # 2. fallback freeipapi.com
+                if not fetched:
+                    try:
+                        res = requests.get(f"https://freeipapi.com/api/json/{ip}", timeout=3)
+                        if res.status_code == 200:
+                            data = res.json()
+                            resolved_loc = {
+                                "city": data.get("cityName") or "Unknown",
+                                "region": data.get("regionName") or "Unknown",
+                                "country_name": data.get("countryName") or "Unknown",
+                                "country_code": data.get("countryCode") or "??",
+                                "org": "Unknown"
+                            }
+                            fetched = True
+                    except Exception as e:
+                        print(f"[Server Geolocation] freeipapi server-side lookup failed: {e}", flush=True)
                         
-        #     # Synthesize complete telemetry visitor object
-        #     visitor = {
-        #         "ip": ip,
-        #         "city": resolved_loc["city"],
-        #         "region": resolved_loc["region"],
-        #         "country_name": resolved_loc["country_name"],
-        #         "country_code": resolved_loc["country_code"],
-        #         "org": resolved_loc["org"],
-        #         "browser": client_body.get("browser") or "Unknown Browser",
-        #         "os": client_body.get("os") or "Unknown OS",
-        #         "screenSize": client_body.get("screenSize") or "Unknown",
-        #         "language": client_body.get("language") or "Unknown",
-        #         "timezone": client_body.get("timezone") or "Unknown",
-        #         "cores": client_body.get("cores") or "Unknown",
-        #         "platform": client_body.get("platform") or "Unknown",
-        #         "userAgent": client_body.get("userAgent") or "Unknown"
-        #     }
+            # Synthesize complete telemetry visitor object
+            visitor = {
+                "ip": ip,
+                "city": resolved_loc["city"],
+                "region": resolved_loc["region"],
+                "country_name": resolved_loc["country_name"],
+                "country_code": resolved_loc["country_code"],
+                "org": resolved_loc["org"],
+                "browser": client_body.get("browser") or "Unknown Browser",
+                "os": client_body.get("os") or "Unknown OS",
+                "screenSize": client_body.get("screenSize") or "Unknown",
+                "language": client_body.get("language") or "Unknown",
+                "timezone": client_body.get("timezone") or "Unknown",
+                "cores": client_body.get("cores") or "Unknown",
+                "platform": client_body.get("platform") or "Unknown",
+                "userAgent": client_body.get("userAgent") or "Unknown"
+            }
             
-        #     loc_str = ", ".join(filter(None, [visitor["city"], visitor["region"], visitor["country_name"]]))
-        #     browser_str = f"{visitor['browser']} ({visitor['os']})"
-        #     log_details = f"[VISITOR ACCESS] New Guest entered. IP: {visitor['ip']} | Location: {loc_str or 'Unknown'} | Browser: {browser_str}"
+            loc_str = ", ".join(filter(None, [visitor["city"], visitor["region"], visitor["country_name"]]))
+            browser_str = f"{visitor['browser']} ({visitor['os']})"
+            log_details = f"[VISITOR ACCESS] New Guest entered. IP: {visitor['ip']} | Location: {loc_str or 'Unknown'} | Browser: {browser_str}"
             
-        #     logs.insert(0, {
-        #         "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
-        #         "timestamp": datetime.utcnow().isoformat() + "Z",
-        #         "type": "PAGE_VIEW",
-        #         "details": log_details,
-        #         "ipPlaceholder": visitor["ip"]
-        #     })
+            logs.insert(0, {
+                "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "type": "PAGE_VIEW",
+                "details": log_details,
+                "ipPlaceholder": visitor["ip"]
+            })
             
-        #     if telegram_service.is_configured():
-        #         def send_alert():
-        #             try:
-        #                 telegram_service.send_visitor_alert(visitor)
-        #             except Exception as e:
-        #                 print(f"Failed to send visitor alert to Telegram: {e}", flush=True)
-        #         import threading
-        #         threading.Thread(target=send_alert).start()
+            if telegram_service.is_configured():
+                def send_alert():
+                    try:
+                        telegram_service.send_visitor_alert(visitor)
+                    except Exception as e:
+                        print(f"Failed to send visitor alert to Telegram: {e}", flush=True)
+                import threading
+                threading.Thread(target=send_alert).start()
                 
-        #     return jsonify({"success": True, "visitor": visitor})
-        # except Exception as e:
-        #     print(f"Visitor entry log transmission failure: {e}", flush=True)
-        #     return jsonify({"error": str(e)}), 500
+            return jsonify({"success": True, "visitor": visitor})
+        except Exception as e:
+            print(f"Visitor entry log transmission failure: {e}", flush=True)
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/telegram/config", methods=["GET"])
     def telegram_config():
