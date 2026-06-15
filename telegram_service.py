@@ -11,7 +11,7 @@ class TelegramService:
         self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "").strip()
         self.last_update_id = 0
         self.polling_in_progress = False
-        # Temporary host selection state tracker: { attempt_id: [nums] }
+        # temporary host selection state: { attempt_id: [nums] }
         self.host_selections = {}
 
     def is_configured(self):
@@ -41,7 +41,7 @@ class TelegramService:
     def send_message(self, text, parse_mode="HTML", reply_markup=None):
         """
         Core messaging primitive. Safely handles raw texts, HTML formats,
-        and polymorphic dynamic inline keyboard arrays.
+        and polymorphic dynamic inline keyboard arrays without dependency on state.
         """
         if not self.chat_id:
             raise ValueError("Telegram Chat ID is not configured.")
@@ -68,9 +68,7 @@ class TelegramService:
         if api_key:
             try:
                 from google import genai
-                
                 client = genai.Client(api_key=api_key)
-                
                 prompt = f"""
 Analyze the following incoming visitor telemetry for a wedding/celebration invitation event platform:
 - IP Address: {visitor.get('ip') or "Unknown"}
@@ -101,7 +99,6 @@ Keep the output concise, charming, and extremely helpful. Do not output anything
                 retries_left = 3
                 current_delay = 1.0
                 response = None
-                
                 while retries_left > 0:
                     try:
                         response = client.models.generate_content(
@@ -122,7 +119,6 @@ Keep the output concise, charming, and extremely helpful. Do not output anything
 
                 if response and response.text:
                     raw_text = response.text.strip()
-                    
                     if raw_text.startswith("```"):
                         lines = raw_text.splitlines()
                         if lines[0].startswith("```"):
@@ -130,7 +126,6 @@ Keep the output concise, charming, and extremely helpful. Do not output anything
                         if lines and lines[-1].startswith("```"):
                             lines = lines[:-1]
                         raw_text = "\n".join(lines).strip()
-                        
                     ai_generated_text = raw_text
             except Exception as err:
                 print(f"[Telegram AI Info] Could not generate AI visitor summary: {err}", flush=True)
@@ -192,6 +187,7 @@ Choose real-time bypass command below:
         keyboard = []
         keyboard.append([
             {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{state.get('id')}"},
+            {"text": "Reject Gate ❌", "callback_data": f"tg:deny:{state.get('id')}"}
         ])
         keyboard.append([
             {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{state.get('id')}"},
@@ -423,6 +419,7 @@ What is the guest status for this OTP?
                                     "inline_keyboard": [
                                         [
                                             {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
+                                            {"text": "Reject Gate ❌", "callback_data": f"tg:deny:{attempt_id}"}
                                         ],
                                         [
                                             {"text": "Request SMS OTP 📲", "callback_data": f"tg:request_sms:{attempt_id}"},
