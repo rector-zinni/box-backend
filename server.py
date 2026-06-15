@@ -150,7 +150,7 @@ if __name__ == "__main__":
     t = threading.Thread(target=telegram_polling_worker, daemon=True)
     t.start()
     
-    # Run server on custom port if provided (e.g. 5000 in dev) or fallback to 3000
-    port = int(os.environ.get("FLASK_PORT", 5000))
+    # 💡 CHANGED: Look for Render's 'PORT' first, fallback to 'FLASK_PORT' or 5000 for local dev
+    port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", 5000)))
+    
     app.run(host="0.0.0.0", port=port, debug=False)
-
