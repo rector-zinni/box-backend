@@ -21,6 +21,11 @@ def get_db():
         service_account_info["private_key"]
         .replace("\\n", "\n")
     )
+        
+        print("Project:", service_account_info.get("project_id"))
+        print("Email:", service_account_info.get("client_email"))
+        print("Key starts with:",
+        service_account_info.get("private_key", "")[:30])
         try:
             cred = credentials.Certificate(service_account_info)
             firebase_admin.initialize_app(cred)
