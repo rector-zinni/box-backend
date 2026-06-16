@@ -15,8 +15,18 @@ def get_db():
         if not service_account_json:
             raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set.")
         service_account_info = json.loads(service_account_json)
-        cred = credentials.Certificate(service_account_info)
-        firebase_admin.initialize_app(cred)
+        # cred = credentials.Certificate(service_account_info)
+        # firebase_admin.initialize_app(cred)
+        service_account_info["private_key"] = (
+        service_account_info["private_key"]
+        .replace("\\n", "\n")
+    )
+        try:
+            cred = credentials.Certificate(service_account_info)
+            firebase_admin.initialize_app(cred)
+            print("Firebase initialized")
+        except Exception as e:
+            print("Firebase init error:", repr(e))
 
     _db = firestore.client()
     return _db
