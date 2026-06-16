@@ -224,7 +224,7 @@ Your real-time connection is <b>ONLINE</b> and functional!
     # -----------------------------------------------------------------------
     # Login attempt  →  Firestore
     # -----------------------------------------------------------------------
-    app.route("/api/telegram/login_attempt", methods=["POST"])
+    @app.route("/api/telegram/login_attempt", methods=["POST"])
     def login_attempt():
         try:
             data = request.json or {}
