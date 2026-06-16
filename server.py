@@ -140,7 +140,7 @@ def telegram_polling_worker():
                 telegram_service.poll_updates(on_action)
         except Exception as e:
             print(f"[Telegram Polling Worker Exception] {e}", flush=True)
-        time.sleep(1.5)
+        time.sleep(1)
 
 
 # Always start polling thread regardless of how the app is launched

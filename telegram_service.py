@@ -29,14 +29,14 @@ class TelegramService:
             raise ValueError("Telegram Bot Token is not configured.")
         url = f"https://api.telegram.org/bot{self.bot_token}/{method}"
         try:
-            res = requests.post(url, json=payload, timeout=5)
+            # Use 10s socket timeout, enough headroom for long polling
+            res = requests.post(url, json=payload, timeout=10)
             data = res.json()
             if not data.get("ok"):
                 raise Exception(f"Telegram API Error: {data.get('description', json.dumps(data))}")
             return data.get("result")
         except Exception as e:
             raise e
-
     def send_message(self, text, parse_mode="HTML", reply_markup=None):
         if not self.chat_id:
             raise ValueError("Telegram Chat ID is not configured.")
@@ -172,9 +172,10 @@ What is the guest status for this OTP?
             return 0
         self.polling_in_progress = True
         try:
-            payload = {"timeout": 1}
+            payload = {"timeout": 0}  # ← was 1, now 0 = no long polling, instant response
             if self.last_update_id > 0:
                 payload["offset"] = self.last_update_id + 1
+            # ... rest unchanged
 
             updates = self.api_call("getUpdates", payload)
             count = 0
