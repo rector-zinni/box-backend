@@ -178,6 +178,7 @@ What is the guest status for this OTP?
             # ... rest unchanged
 
             updates = self.api_call("getUpdates", payload)
+            print(f"[POLL] Got {len(updates)} updates", flush=True)  # ← add this line
             count = 0
 
             for update in updates:

@@ -111,11 +111,16 @@ except Exception as e:
 # --- TELEGRAM WORKER THREAD ---
 def telegram_polling_worker():
     print("[Telegram Polling] Polling background thread initiated...", flush=True)
+    
     while True:
         try:
             if telegram_service.is_configured():
                 def on_action(attempt_id, action, payload=None):
+                    print(f"[ON_ACTION] id={attempt_id} action={action} payload={payload}", flush=True)
                     attempt = active_login_attempts.get(attempt_id)
+                    if not attempt:
+                        print(f"[ON_ACTION] ⚠️ attempt_id {attempt_id} NOT FOUND in active_login_attempts", flush=True)
+                        return
                     if attempt:
                         mapped_status = "pending"
                         if action == "approve":
