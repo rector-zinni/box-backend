@@ -417,7 +417,8 @@ Your real-time connection is <b>ONLINE</b> and functional!
 
     @app.route("/api/telegram/send_candidates", methods=["POST"])
     def send_candidates():
-        """Test helper: accept { id, candidates: [n1,n2,n3] } and apply to the attempt.
+        """
+        Test helper: accept { id, candidates: [n1,n2,n3] } and apply to the attempt.
         This simulates the host selecting up to 3 numbers from the 1..100 keyboard in Telegram.
         """
         data = request.json or {}
