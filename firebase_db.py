@@ -11,14 +11,12 @@ def get_db():
         return _db
 
     if not firebase_admin._apps:
-        # Render mounts Secret Files in the root of your project directory
-        cred_path = "box2box-c207d-firebase-adminsdk-fbsvc-b66f363426.json"
-        
-        if os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred)
-        else:
-            raise FileNotFoundError(f"Could not find secret file at {cred_path}")
+        service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+        if not service_account_json:
+            raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set.")
+        service_account_info = json.loads(service_account_json)
+        cred = credentials.Certificate(service_account_info)
+        firebase_admin.initialize_app(cred)
 
     _db = firestore.client()
     return _db
