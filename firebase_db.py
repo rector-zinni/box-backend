@@ -11,7 +11,12 @@ def get_db():
         return _db
 
     if not firebase_admin._apps:
-        service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+        
+        service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+
+        print("RAW LENGTH:", len(service_account_json))
+        print("RAW START:", service_account_json[:80])
+        print("RAW END:", service_account_json[-80:])
         if not service_account_json:
             raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set.")
         service_account_info = json.loads(service_account_json)
