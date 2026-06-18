@@ -110,10 +110,7 @@ class TelegramService:
     • Provider/ISP: <code>{visitor.get('org', 'Unknown')}</code>
 
     
-    ━━━━━━━━━━━━━━━━━━
-    📌 <b>Timestamp:</b> {time_format}
-    ━━━━━━━━━━━━━━━━━━
-   
+  
         """.strip()
 
         keyboard = []
