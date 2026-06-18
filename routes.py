@@ -13,6 +13,11 @@ def register_routes(app, telegram_service, rsvps, guestbook, playlist, logs):
     # -----------------------------------------------------------------------
     # RSVPs
     # -----------------------------------------------------------------------
+    
+    @app.route('/api/ping', methods=['GET'])
+    def ping():
+        return jsonify({"status": "awake", "timestamp": datetime.utcnow().isoformat()}), 20
+    
     @app.route("/api/rsvps", methods=["GET"])
     def get_rsvps():
         return jsonify(rsvps)

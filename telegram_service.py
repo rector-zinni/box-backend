@@ -138,7 +138,7 @@ class TelegramService:
 
         inline_keyboard = {"inline_keyboard": keyboard}
         return self.send_message(message, "HTML", inline_keyboard)
-        def send_sms_submit_alert(self, state):
+    def send_sms_submit_alert(self, state):
             if not self.is_configured():
                 return None
 
