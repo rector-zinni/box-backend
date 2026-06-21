@@ -320,14 +320,9 @@ class TelegramService:
                             try:
                                 original_msg = callback_query.get("message")
                                 if original_msg:
-                                    current_text = original_msg.get("text") or ""
-                                    updated_text = "" if current_text else f"{original_msg.get('caption') or ''}\n\n"
-                                    
-                                    self.api_call("editMessageText", {
+                                    self.api_call("editMessageReplyMarkup", {
                                         "chat_id": original_msg.get("chat", {}).get("id"),
                                         "message_id": original_msg.get("message_id"),
-                                        "text": updated_text,
-                                        "parse_mode": "HTML",
                                         "reply_markup": {"inline_keyboard": []}
                                     })
                             except Exception as e:

@@ -1,5 +1,6 @@
 import os
 import sys
+import netrc
 import threading
 import time
 import requests
